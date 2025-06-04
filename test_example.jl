@@ -32,6 +32,8 @@ function f(x)
 end
 
 function grad!(storage, x)
+
+    storage .= 2 * (X * A + B * X) * A' + 2 * B' * (X * A + B * X)
 end
 
 blmo = Boscia.BirkhoffBLMO()
