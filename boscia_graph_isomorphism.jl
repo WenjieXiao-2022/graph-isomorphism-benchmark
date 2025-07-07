@@ -5,8 +5,11 @@ using Bonobo
 using FrankWolfe
 using MAT
 using Random
+using HiGHS
+using MathOptInterface
+const MOI = MathOptInterface
 
-function random_k_neighbor_matrix(tree::Bonobo.BnBTree, blmo::Boscia.TimeTrackingLMO, x, k::Int)
+function random_k_neighbor_matrix(tree::Bonobo.BnBTree, blmo::Boscia.TimeTrackingLMO, x, k::Int, use_mip=false)
     P = tree.incumbent_solution.solution
     n0 = size(P, 1)
     n = Int(sqrt(n0))
@@ -32,14 +35,43 @@ function random_k_neighbor_matrix(tree::Bonobo.BnBTree, blmo::Boscia.TimeTrackin
         new_P[j, col_j] = 0
         new_P[j, col_i] = 1
 
-        new_p = vec(new_P)
+        new_p = use_mip ? vec(new_P) : sparsevec(vec(new_P))# Convert to proper SparseVector
         push!(Ps, new_p)
     end
 
     return Ps, false
 end
 
-function boscia_graph_isomorphism(A, B; print_iter=10, variant=Boscia.DICG())
+function build_birkhoff_mip(n)
+    o = HiGHS.Optimizer()
+    MOI.set(o, MOI.Silent(), true)
+    MOI.empty!(o)
+    X = reshape(MOI.add_variables(o, n^2), n, n)
+
+    MOI.add_constraint.(o, X, MOI.ZeroOne())
+    
+    # Row sum constraints: each row sums to 1
+    for i in 1:n
+        row_constraint = MOI.ScalarAffineFunction(
+            [MOI.ScalarAffineTerm(1.0, X[i, j]) for j in 1:n],
+            0.0
+        )
+        MOI.add_constraint(o, row_constraint, MOI.EqualTo(1.0))
+    end
+    
+    # Column sum constraints: each column sums to 1
+    for j in 1:n
+        col_constraint = MOI.ScalarAffineFunction(
+            [MOI.ScalarAffineTerm(1.0, X[i, j]) for i in 1:n],
+            0.0
+        )
+        MOI.add_constraint(o, col_constraint, MOI.EqualTo(1.0))
+    end
+    
+    return Boscia.MathOptBLMO(o)
+end
+
+function boscia_graph_isomorphism(A, B; print_iter=10, variant=Boscia.DICG(), fw_iter=1000, mip=false)
     n = size(A, 1)
     function f(x)
         X = reshape(x, n, n)
@@ -82,18 +114,16 @@ function boscia_graph_isomorphism(A, B; print_iter=10, variant=Boscia.DICG())
     
     lower_bounds = fill(0.0, n^2)
     upper_bounds = fill(1.0, n^2)
+
+    blmo = mip ? build_birkhoff_mip(n) : Boscia.ManagedBoundedLMO(sblmo, lower_bounds, upper_bounds, collect(1:n^2), n^2)
     
     k = Int(round(sqrt(n)))
-    swap_heu = Boscia.Heuristic((tree, blmo, x) -> random_k_neighbor_matrix(tree, blmo, x, k), 1.0, :swap)
+    swap_heu = Boscia.Heuristic((tree, blmo, x) -> random_k_neighbor_matrix(tree, blmo, x, k, mip), 1.0, :swap)
     
     x, _, result = Boscia.solve(
         f,
         grad!,
-        sblmo,
-        lower_bounds,
-        upper_bounds,
-        collect(1:n^2),
-        n^2;
+        blmo;
         variant=variant,
         line_search=FrankWolfe.Secant(),
         verbose=true,
@@ -101,6 +131,7 @@ function boscia_graph_isomorphism(A, B; print_iter=10, variant=Boscia.DICG())
         bnb_callback=build_tree_callback(),
         print_iter=print_iter,
         custom_heuristics=[swap_heu],
+        max_fw_iter=fw_iter,
     )
 
     X = reshape(x, n, n)
