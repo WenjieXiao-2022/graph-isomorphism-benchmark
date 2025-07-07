@@ -18,38 +18,6 @@ function randomPermutation(A)
     return B, P
 end
 
-function random_k_neighbor_matrix(tree::Bonobo.BnBTree, blmo::Boscia.TimeTrackingLMO, x, k::Int)
-    P = tree.incumbent_solution.solution
-    n0 = size(P, 1)
-    n = Int(sqrt(n0))
-    P = reshape(P, n, n)
-    new_P = copy(P)
-
-    Ps = []
-
-    for _ in 1:k
-        # Pick two distinct rows
-        i, j = rand(1:n, 2)
-        while i == j
-            j = rand(1:n)
-        end
-
-        # Find 1s in each row
-        col_i = findfirst(x -> x == 1, new_P[i, :])
-        col_j = findfirst(x -> x == 1, new_P[j, :])
-
-        # Swap the 1s across columns
-        new_P[i, col_i] = 0
-        new_P[i, col_j] = 1
-        new_P[j, col_j] = 0
-        new_P[j, col_i] = 1
-        push!(Ps, new_P)
-        @show typeof(new_P)
-    end
-
-    return Ps, false
-end
-
 # Read the Petersen graph matrix from .mat file
 data = matread("Petersen.mat") # Petersen.mat, BiggsSmith.mat, Paley29.mat
 A = sparse(data["M"])  # The matrix is stored as "M" in the file

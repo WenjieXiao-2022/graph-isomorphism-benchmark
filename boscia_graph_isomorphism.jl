@@ -31,7 +31,9 @@ function random_k_neighbor_matrix(tree::Bonobo.BnBTree, blmo::Boscia.TimeTrackin
         new_P[i, col_j] = 1
         new_P[j, col_j] = 0
         new_P[j, col_i] = 1
-        push!(Ps, new_P)
+
+        new_p = vec(new_P)
+        push!(Ps, new_p)
     end
 
     return Ps, false
@@ -98,6 +100,7 @@ function boscia_graph_isomorphism(A, B; print_iter=10, variant=Boscia.DICG())
         branch_callback=build_branch_callback(),
         bnb_callback=build_tree_callback(),
         print_iter=print_iter,
+        custom_heuristics=[swap_heu],
     )
 
     X = reshape(x, n, n)
