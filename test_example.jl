@@ -19,7 +19,7 @@ function randomPermutation(A)
 end
 
 # Read the Petersen graph matrix from .mat file
-data = matread("Petersen.mat") # Petersen.mat, BiggsSmith.mat, Paley29.mat
+data = matread("Paley29.mat") # Petersen.mat, BiggsSmith.mat, Paley29.mat
 A = sparse(data["M"])  # The matrix is stored as "M" in the file
 n = Int(data["n"])     # The size parameter
 
@@ -34,5 +34,8 @@ B = sparse(B)
 x_fw = frank_wolfe_graph_isomorphism(A, B, nIter=1000)
 @show x_fw
 
-x = boscia_graph_isomorphism(A, B, print_iter=10, variant=Boscia.DICG())
+x = boscia_graph_isomorphism(A, B, print_iter=10, variant=Boscia.BPCG())
+@show x
+
+x = boscia_graph_isomorphism(A, B, print_iter=10, variant=Boscia.BPCG(), mip=true)
 @show x
