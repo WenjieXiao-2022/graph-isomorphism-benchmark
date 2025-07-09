@@ -3,6 +3,7 @@ using SparseArrays
 using JuMP
 using HiGHS  # For linear programming
 using Plots  # For plotting
+using SCIP
 
 """
 Frank-Wolfe solver for the graph isomorphism problem. A and B are the
@@ -84,7 +85,7 @@ end
 Solve quadratic programming problem: min 0.5*x'*H*x subject to C*x = d, 0 <= x <= 1
 """
 function solve_quadprog(H, C, d, n)
-    model = Model(HiGHS.Optimizer)
+    model = Model(SCIP.Optimizer)
     set_silent(model)
     
     @variable(model, 0 <= x[1:n^2] <= 1)
@@ -96,6 +97,7 @@ function solve_quadprog(H, C, d, n)
     if termination_status(model) == MOI.OPTIMAL
         return value.(x)
     else
+        @show termination_status(model)
         error("Quadratic programming solver failed")
     end
 end
@@ -104,7 +106,7 @@ end
 Solve linear programming problem: min c'*x subject to A*x = b, 0 <= x <= 1
 """
 function solve_linprog(c, A, b, n)
-    model = Model(HiGHS.Optimizer)
+    model = Model(SCIP.Optimizer)
     set_silent(model)
     
     @variable(model, 0 <= x[1:n^2] <= 1)
