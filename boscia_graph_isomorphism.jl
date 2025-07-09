@@ -42,7 +42,7 @@ function random_k_neighbor_matrix(tree::Bonobo.BnBTree, blmo::Boscia.TimeTrackin
     return Ps, false
 end
 
-function build_birkhoff_mip(n)
+function build_birkhoff_mip(n, A, B; cut=false)
     o = HiGHS.Optimizer()
     MOI.set(o, MOI.Silent(), true)
     MOI.empty!(o)
@@ -67,11 +67,62 @@ function build_birkhoff_mip(n)
         )
         MOI.add_constraint(o, col_constraint, MOI.EqualTo(1.0))
     end
+
+    if cut 
+        # Add gradient = 0 constraints
+        # ∇f(X) = 2(XA - BX)A' - 2B'(XA - BX) = 0
+        # This gives us: (XA - BX)A' - B'(XA - BX) = 0
+        # Expanding: XAA' - BXA' - B'XA + B'BX = 0
+        # Rearranging: X(AA' + B'B) - BXA' - B'XA = 0
+        
+        # Precompute matrices
+        AA_t = A * A'
+        BB_t = B' * B
+        BA_t = B * A'
+        B_tA = B' * A
+        
+        # For each entry (i,j) of the gradient matrix, add constraint = 0
+        for i in 1:n
+            for j in 1:n
+                # Gradient[i,j] = sum_k (X[i,k] * (AA'[k,j] + B'B[k,j]) - B[i,k] * X[k,l] * A'[l,j] - B'[i,k] * X[k,l] * A[l,j])
+                grad_terms = MOI.ScalarAffineTerm{Float64}[]
+                
+                # Terms from X(AA' + B'B)
+                for k in 1:n
+                    coeff = AA_t[k,j] + BB_t[k,j]
+                    if abs(coeff) > 1e-12
+                        push!(grad_terms, MOI.ScalarAffineTerm(coeff, X[i,k]))
+                    end
+                end
+                
+                # Terms from -BXA'
+                for k in 1:n, l in 1:n
+                    coeff = -B[i,k] * A[l,j]  # A'[l,j] = A[j,l] but we want A'[l,j]
+                    if abs(coeff) > 1e-12
+                        push!(grad_terms, MOI.ScalarAffineTerm(coeff, X[k,l]))
+                    end
+                end
+                
+                # Terms from -B'XA  
+                for k in 1:n, l in 1:n
+                    coeff = -B[k,i] * A[l,j]  # B'[i,k] = B[k,i]
+                    if abs(coeff) > 1e-12
+                        push!(grad_terms, MOI.ScalarAffineTerm(coeff, X[k,l]))
+                    end
+                end
+                
+                if !isempty(grad_terms)
+                    grad_constraint = MOI.ScalarAffineFunction(grad_terms, 0.0)
+                    MOI.add_constraint(o, grad_constraint, MOI.EqualTo(0.0))
+                end
+            end
+        end
+    end
     
     return Boscia.MathOptBLMO(o)
 end
 
-function boscia_graph_isomorphism(A, B; print_iter=10, variant=Boscia.DICG(), fw_iter=1000, mip=false)
+function boscia_graph_isomorphism(A, B; print_iter=10, variant=Boscia.DICG(), fw_iter=1000, mip=false, cut=false)
     n = size(A, 1)
     function f(x)
         X = reshape(x, n, n)
@@ -115,7 +166,7 @@ function boscia_graph_isomorphism(A, B; print_iter=10, variant=Boscia.DICG(), fw
     lower_bounds = fill(0.0, n^2)
     upper_bounds = fill(1.0, n^2)
 
-    blmo = mip ? build_birkhoff_mip(n) : Boscia.ManagedBoundedLMO(sblmo, lower_bounds, upper_bounds, collect(1:n^2), n^2)
+    blmo = mip ? build_birkhoff_mip(n, A, B; cut=cut) : Boscia.ManagedBoundedLMO(sblmo, lower_bounds, upper_bounds, collect(1:n^2), n^2)
     
     k = Int(round(sqrt(n)))
     swap_heu = Boscia.Heuristic((tree, blmo, x) -> random_k_neighbor_matrix(tree, blmo, x, k, mip), 1.0, :swap)
