@@ -31,11 +31,11 @@ println("Matrix sparsity: ", nnz(A), " non-zeros out of ", length(A), " total el
 B, P = randomPermutation(Matrix(A))
 B = sparse(B)
 
-x_fw = frank_wolfe_graph_isomorphism(A, B, nIter=1000)
+x_fw = frank_wolfe_graph_isomorphism(A, B, nIter=100)
 @show x_fw
 
-x = boscia_graph_isomorphism(A, B, print_iter=10, variant=Boscia.BPCG())
-@show x
+#x = boscia_graph_isomorphism(A, B, print_iter=10, variant=Boscia.BPCG(), fw_iter=10)
+#@show x
 
-x = boscia_graph_isomorphism(A, B, print_iter=10, variant=Boscia.BPCG(), mip=true)
+x = boscia_graph_isomorphism(A, B, print_iter=10, variant=Boscia.BPCG(), mip=true, fw_iter=100)
 @show x
