@@ -133,33 +133,45 @@ function boscia_run(
     function f(x)
         X = reshape(x, n, n)
         R = X * A - B * X
-        if regularized
-            return sum(abs2, R) + μ / 2 * sum(abs2, X)           # == ‖R‖_F^2
-        elseif is_modified
-            return sum(abs2, R) - μ * n
-        elseif is_frac32                        # == ‖R‖_F^(3/2)
-            return (sum(abs2, R))^ (3/4)
-        else
-            sum(abs2, R)
-        end
+        return sum(abs2, R)  # == ‖R‖_F^2 
     end
 
     function grad!(storage, x)
         X = reshape(x, n, n)
         R = X * A - B * X                     # residual
-        if regularized
-            grad_matrix = 2 * (R * A' - B' * R) + μ * X
-            storage .= vec(grad_matrix)
-        elseif is_frac32
-            # factor = (3/2) * g^(-1/4) = (3/2) * ||R||_F^(-1/2)
-            factor = (3/2) * sum(abs2, R)^(-1/4)
-            # Base gradient from ||R||_F^(3/2)
-            grad_matrix = factor .* (R * A' .- B' * R)
-            storage .= vec(grad_matrix)
-        else
-            grad_matrix = 2 * (R * A' - B' * R)
-            storage .= vec(grad_matrix)
-        end
+
+        grad_matrix = 2 * (R * A' - B' * R)
+        storage .= vec(grad_matrix)
+    end
+
+    function f_regularized(x)
+        X = reshape(x, n, n)
+        R = X * A - B * X
+        return sum(abs2, R) + μ / 2 * sum(abs2, X)
+    end
+
+    function grad_regularized!(storage, x)
+        X = reshape(x, n, n)
+        R = X * A - B * X                     # residual
+        grad_matrix = 2 * (R * A' - B' * R) + μ * X
+        storage .= vec(grad_matrix)
+
+    end
+
+    function f_frac32(x)
+        X = reshape(x, n, n)
+        R = X * A - B * X
+        return (sum(abs2, R))^(3 / 4) # == ‖R‖_F^(3/2)
+    end
+
+    function grad_frac32!(storage, x)
+        X = reshape(x, n, n)
+        R = X * A - B * X                     # residual
+        # factor = (3/2) * g^(-1/4) = (3/2) * ||R||_F^(-1/2)
+        factor = (3 / 2) * sum(abs2, R)^(-1 / 4)
+        # Base gradient from ||R||_F^(3/2)
+        grad_matrix = factor .* (R * A' .- B' * R)
+        storage .= vec(grad_matrix)
     end
 
     function build_branch_callback()
@@ -176,7 +188,7 @@ function boscia_run(
         end
     end
 
-    function build_tree_callback(; is_iso = false)
+    function build_tree_callback()
         return function (
             tree,
             node;
@@ -187,7 +199,6 @@ function boscia_run(
             optimal_val = regularized ? μ / 2 * n : 0.0
             if isapprox(tree.incumbent, optimal_val, atol = eps())
                 tree.root.problem.solving_stage = Boscia.USER_STOP
-                is_iso = true
                 println("Optimal solution found.")
             end
             if Boscia.tree_lb(tree::Bonobo.BnBTree) > optimal_val + eps()
@@ -255,7 +266,8 @@ function boscia_run(
     end
     settings.branch_and_bound[:time_limit] = 10
 
-    use_depth ? settings.branch_and_bound[:traverse_strategy] = Boscia.DepthFirstSearch(favor_right) :
+    use_depth ?
+    settings.branch_and_bound[:traverse_strategy] = Boscia.DepthFirstSearch(favor_right) :
     nothing
 
     settings.heuristic[:custom_heuristics] = [swap_heu]
@@ -275,7 +287,21 @@ function boscia_run(
         settings.domain[:active_set] = active_set_precompile
     end
 
-    x, _, result = Boscia.solve(f, grad!, blmo_precompile, settings = settings)
+    if regularized
+        println("Using regularized formulation...")
+        f_run = f_regularized
+        grad_run! = grad_regularized!
+    elseif is_frac32
+        println("Using p=1.5 formulation...")
+        f_run = f_frac32
+        grad_run! = grad_frac32!
+    else
+        println("Using quadratic formulation...")
+        f_run = f
+        grad_run! = grad!
+    end
+
+    x, _, result = Boscia.solve(f_run, grad_run!, blmo_precompile, settings = settings)
 
     settings = Boscia.create_default_settings()
     settings.branch_and_bound[:verbose] = verbose
@@ -287,7 +313,8 @@ function boscia_run(
         settings.branch_and_bound[:branch_callback] = build_branch_callback()
     end
 
-    use_depth ? settings.branch_and_bound[:traverse_strategy] = Boscia.DepthFirstSearch(favor_right) :
+    use_depth ?
+    settings.branch_and_bound[:traverse_strategy] = Boscia.DepthFirstSearch(favor_right) :
     nothing
 
     settings.branch_and_bound[:time_limit] = time_limit
@@ -309,7 +336,7 @@ function boscia_run(
         # settings.tightening[:strong_convexity] = μ
     end
 
-    x, _, result = Boscia.solve(f, grad!, blmo, settings = settings)
+    x, _, result = Boscia.solve(f_run, grad_run!, blmo, settings = settings)
 
     X = reshape(x, n, n)
 

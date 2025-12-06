@@ -59,7 +59,7 @@ bench(
     ".",
     format      = "dimacs",
     verbose     = true,
-    solver      = "boscia_dicg",
+    solver      = "boscia_dicg_frac32",
     write       = false,
     iso_generate = true,
     time_limit  = Inf,
