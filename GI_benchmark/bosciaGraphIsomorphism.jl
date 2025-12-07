@@ -126,9 +126,23 @@ function boscia_run(
     is_modified = false,
     favor_right = true,
     is_frac32 = false,
+    iso_generate = true,
+    is_accel = false,
 )
     n = size(A, 1)
     μ = 1e-2
+
+    
+    Q = is_accel ? ( kron(A, sparse(I, n, n)) - kron(sparse(I, n, n), B))' * ( kron(A, sparse(I, n, n)) - kron(sparse(I, n, n), B)) : nothing
+
+  
+    function f_accel(x)
+        return dot(x, Q, x)
+    end
+
+    function grad_accel!(storage, x)
+        mul!(storage, Q, x, 2.0, 0.0)
+    end
 
     function f(x)
         X = reshape(x, n, n)
@@ -139,7 +153,6 @@ function boscia_run(
     function grad!(storage, x)
         X = reshape(x, n, n)
         R = X * A - B * X                     # residual
-
         grad_matrix = 2 * (R * A' - B' * R)
         storage .= vec(grad_matrix)
     end
@@ -222,26 +235,26 @@ function boscia_run(
         println("Boscia is using DepthFirstStrategy favoring $(favor_children) children...")
     end
 
-    if starting_point_dca || starting_point_fw
-        FW = starting_point_fw ? true : false
-        _, active_set_qua_precompile = get_initial_point(A, B, n; FW = FW, time_limit = 10)
-        _, active_set_qua = get_initial_point(A, B, n; FW = FW, time_limit = 100)
+    # if starting_point_dca || starting_point_fw
+    #     FW = starting_point_fw ? true : false
+    #     _, active_set_qua_precompile = get_initial_point(A, B, n; FW = FW, time_limit = 10)
+    #     _, active_set_qua = get_initial_point(A, B, n; FW = FW, time_limit = 100)
 
-        if typeof(active_set_qua_precompile).name.wrapper == FrankWolfe.ActiveSet
-            active_set_precompile = active_set_qua_precompile
-            active_set = active_set_qua
-        else
-            # Precompile version
-            tuple_values_pre = collect(
-                zip(active_set_qua_precompile.weights, active_set_qua_precompile.atoms),
-            )
-            active_set_precompile = FrankWolfe.ActiveSet(tuple_values_pre)
+    #     if typeof(active_set_qua_precompile).name.wrapper == FrankWolfe.ActiveSet
+    #         active_set_precompile = active_set_qua_precompile
+    #         active_set = active_set_qua
+    #     else
+    #         # Precompile version
+    #         tuple_values_pre = collect(
+    #             zip(active_set_qua_precompile.weights, active_set_qua_precompile.atoms),
+    #         )
+    #         active_set_precompile = FrankWolfe.ActiveSet(tuple_values_pre)
 
-            # Main version
-            tuple_values = collect(zip(active_set_qua.weights, active_set_qua.atoms))
-            active_set = FrankWolfe.ActiveSet(tuple_values)
-        end
-    end
+    #         # Main version
+    #         tuple_values = collect(zip(active_set_qua.weights, active_set_qua.atoms))
+    #         active_set = FrankWolfe.ActiveSet(tuple_values)
+    #     end
+    # end
 
     # default is set to BPCG with lazification
     if contains(solver, "dicg")
@@ -254,37 +267,38 @@ function boscia_run(
         variant = Boscia.BlendedPairwiseConditionalGradient()
         lazy = true
     end
+    
     # Precompile
-    settings = Boscia.create_default_settings()
-    settings.branch_and_bound[:verbose] = true
-    settings.branch_and_bound[:print_iter] = print_iter
+    settings_pre= Boscia.create_default_settings()
+    settings_pre.branch_and_bound[:verbose] = true
+    settings_pre.branch_and_bound[:print_iter] = print_iter
 
     if !(is_graph_matching && !is_modified)
         @info "Activating callback..."
-        settings.branch_and_bound[:bnb_callback] = build_tree_callback()
-        settings.branch_and_bound[:branch_callback] = build_branch_callback()
+        settings_pre.branch_and_bound[:bnb_callback] = build_tree_callback()
+        settings_pre.branch_and_bound[:branch_callback] = build_branch_callback()
     end
-    settings.branch_and_bound[:time_limit] = 10
+    settings_pre.branch_and_bound[:time_limit] = 10
 
     use_depth ?
-    settings.branch_and_bound[:traverse_strategy] = Boscia.DepthFirstSearch(favor_right) :
+    settings_pre.branch_and_bound[:traverse_strategy] = Boscia.DepthFirstSearch(favor_right) :
     nothing
 
-    settings.heuristic[:custom_heuristics] = [swap_heu]
-    settings.frank_wolfe[:variant] = variant
-    settings.frank_wolfe[:line_search] = FrankWolfe.Secant()
-    settings.frank_wolfe[:lazy] = lazy
-    settings.frank_wolfe[:max_fw_iter] = fw_iter
-    settings.frank_wolfe[:fw_verbose] = false
+    settings_pre.heuristic[:custom_heuristics] = [swap_heu]
+    settings_pre.frank_wolfe[:variant] = variant
+    settings_pre.frank_wolfe[:line_search] = FrankWolfe.Secant()
+    settings_pre.frank_wolfe[:lazy] = lazy
+    settings_pre.frank_wolfe[:max_fw_iter] = fw_iter
+    settings_pre.frank_wolfe[:fw_verbose] = false
     if regularized
         # settings.tightening[:sharpness_constant] = sqrt(2 / μ)
-        settings.tightening[:sharpness_constant] = 1
-        settings.tightening[:sharpness_exponent] = 1 / 2
+        settings_pre.tightening[:sharpness_constant] = 1
+        settings_pre.tightening[:sharpness_exponent] = 1 / 2
         # settings.tightening[:strong_convexity] = μ
     end
 
     if starting_point_dca || starting_point_fw
-        settings.domain[:active_set] = active_set_precompile
+        settings_pre.domain[:active_set] = active_set_precompile
     end
 
     if regularized
@@ -295,13 +309,17 @@ function boscia_run(
         println("Using p=1.5 formulation...")
         f_run = f_frac32
         grad_run! = grad_frac32!
+    elseif is_accel
+        println("Using xQx formulation...")
+        f_run = f_accel
+        grad_run! = grad_accel!
     else
         println("Using quadratic formulation...")
         f_run = f
         grad_run! = grad!
     end
 
-    x, _, result = Boscia.solve(f_run, grad_run!, blmo_precompile, settings = settings)
+    x, _, result = Boscia.solve(f_run, grad_run!, blmo_precompile, settings = settings_pre)
 
     settings = Boscia.create_default_settings()
     settings.branch_and_bound[:verbose] = verbose
@@ -355,7 +373,7 @@ function boscia_run(
                 @info "Found Isomorphism"
             end
             status = "OPTIMAL"
-        elseif !is_graph_matching
+        elseif !is_graph_matching && !iso_generate
             @show result[:dual_bound]
             @assert result[:dual_bound] > 0.0
             staus = "OPTIMAL"

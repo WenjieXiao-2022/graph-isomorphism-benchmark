@@ -1,6 +1,8 @@
 using LinearAlgebra
-
+using ProfileView
+using Profile
 include("./benchmarkProblems.jl")
+
 
 # ------------------------------------------------------------
 # Solver options
@@ -9,7 +11,7 @@ include("./benchmarkProblems.jl")
 #   "boscia_fw"
 #   "boscia_bpcg"
 #   "boscia_dicg"
-#   "boscia_dicg_depth"
+#   "boscia_dicg_depth
 #   "boscia_dicg_depth_left"
 #   "boscia_dicg_frac32"
 #   "boscia_dicg_depth_frac32"
@@ -18,6 +20,7 @@ include("./benchmarkProblems.jl")
 #   - "depth"     : use depth-first strategy in the BnB tree
 #   - "frac32"    : use ||XA-BX||_F^(3/2) objective variant
 #   - "left"      : modify branching/traversal to favor left children
+#   - "accel"     : use accelerated precomputation of Q matrix
 #
 # Graph-matching variants:
 #   add "gm" to the solver name, optionally with a flip count suffix:
@@ -53,14 +56,18 @@ include("./benchmarkProblems.jl")
 # ------------------------------------------------------------
 
 # Example: run Boscia DICG on a single instance
-bench(
-    "exact_001",  # instance name / ID in your logging
-    3,            # number of repetitions
+ProfileView.@profview bench(
+    "latin_7_49",  # graph name
+    3,            # random seed
     ".",
-    format      = "dimacs",
+    format      = "mat",
     verbose     = true,
-    solver      = "boscia_dicg_frac32",
+    solver      = "boscia_dicg",
     write       = false,
     iso_generate = true,
     time_limit  = Inf,
 )
+
+# open("./profile.jlprof", "w") do io
+#     Profile.print(io)
+# end

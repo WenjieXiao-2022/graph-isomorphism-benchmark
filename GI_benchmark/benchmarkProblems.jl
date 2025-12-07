@@ -277,6 +277,9 @@ function bench(
         else
             use_depth = false
         end
+
+        is_accel = occursin("accel", solver) ? true : false
+
         is_modified = false
         if occursin("gm", solver)
             is_graph_matching = true
@@ -301,7 +304,7 @@ function bench(
             favor_right = favor_right,
             is_modified = is_modified,
             is_frac32 = is_frac32,
-            
+            is_accel = is_accel,
         )
         if status == "OPTIMAL"
             issolved = true
