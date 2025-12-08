@@ -1,6 +1,7 @@
 using LinearAlgebra
 using ProfileView
 using Profile
+using CSV
 include("./benchmarkProblems.jl")
 
 
@@ -56,17 +57,21 @@ include("./benchmarkProblems.jl")
 # ------------------------------------------------------------
 
 # Example: run Boscia DICG on a single instance
-ProfileView.@profview bench(
+# @profview 
+
+bench(
     "latin_7_49",  # graph name
     3,            # random seed
     ".",
     format      = "mat",
     verbose     = true,
-    solver      = "boscia_dicg",
+    solver      = "boscia_dicg_gm_prune",
     write       = false,
-    iso_generate = true,
+    iso_generate = false,
     time_limit  = Inf,
 )
+
+# fig = ProfileView.view()
 
 # open("./profile.jlprof", "w") do io
 #     Profile.print(io)

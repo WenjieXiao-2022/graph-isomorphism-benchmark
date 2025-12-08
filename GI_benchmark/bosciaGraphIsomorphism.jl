@@ -10,9 +10,7 @@ using DataFrames
 using CombinatorialLinearOracles
 const CLO = CombinatorialLinearOracles
 
-include(
-    "./dca_solver.jl",
-)
+include("./dca_solver.jl")
 
 function random_k_neighbor_matrix(
     tree::Bonobo.BnBTree,
@@ -128,14 +126,18 @@ function boscia_run(
     is_frac32 = false,
     iso_generate = true,
     is_accel = false,
+    use_prune = false,
 )
     n = size(A, 1)
     μ = 1e-2
 
-    
-    Q = is_accel ? ( kron(A, sparse(I, n, n)) - kron(sparse(I, n, n), B))' * ( kron(A, sparse(I, n, n)) - kron(sparse(I, n, n), B)) : nothing
 
-  
+    Q =
+        is_accel ?
+        (kron(A, sparse(I, n, n)) - kron(sparse(I, n, n), B))' *
+        (kron(A, sparse(I, n, n)) - kron(sparse(I, n, n), B)) : nothing
+
+
     function f_accel(x)
         return dot(x, Q, x)
     end
@@ -187,6 +189,7 @@ function boscia_run(
         storage .= vec(grad_matrix)
     end
 
+    # define callbacks for both isomorphic and non-isomorphic scenarios
     function build_branch_callback()
         return function (tree, node, vidx::Int)
             x = Bonobo.get_relaxed_values(tree, node)
@@ -217,6 +220,51 @@ function boscia_run(
             if Boscia.tree_lb(tree::Bonobo.BnBTree) > optimal_val + eps()
                 tree.root.problem.solving_stage = Boscia.USER_STOP
                 println("Tree lower bound already positive. No solution possible.")
+            end
+        end
+    end
+
+    # define callbacks for graph-matching scenario
+    function build_matching_branch_callback()
+        return function (tree, node, vidx::Int)
+            x = Bonobo.get_relaxed_values(tree, node)
+            primal = tree.root.problem.f(x)
+            lower_bound = primal - node.dual_gap
+            prune = if is_frac32
+                ceil(lower_bound^2) >= tree.incumbent^2 - sqrt(eps())
+            else
+                ceil(lower_bound) >= tree.incumbent - sqrt(eps())
+            end
+            #@show tree.incumbent, lower_bound, ceil(lower_bound)
+            if prune
+                println("Pruning node because it will not provide a better solution.")
+            end
+            return prune, prune
+        end
+    end
+
+    function build_matching_tree_callback()
+        return function (
+            tree,
+            node;
+            worse_than_incumbent = false,
+            node_infeasible = false,
+            lb_update = false,
+        )
+            # @show tree.incumbent, Boscia.tree_lb(tree), ceil(Boscia.tree_lb(tree))
+            if !is_frac32 &&
+               isapprox(tree.incumbent, ceil(Boscia.tree_lb(tree)), atol = sqrt(eps()))
+                tree.root.problem.solving_stage = Boscia.USER_STOP
+                println(
+                    "Optimal solution has to be an integer. Ceiled lower bound reaches current incumbent. Optimal solution found.",
+                )
+            end
+            if is_frac32 &&
+               isapprox(tree.incumbent^2, ceil(Boscia.tree_lb(tree)^2), atol = sqrt(eps()))
+                tree.root.problem.solving_stage = Boscia.USER_STOP
+                println(
+                    "Optimal solution has to be the square root of an integer. Ceiled squared lower bound reaches current squared incumbent. Optimal solution found.",
+                )
             end
         end
     end
@@ -267,9 +315,9 @@ function boscia_run(
         variant = Boscia.BlendedPairwiseConditionalGradient()
         lazy = true
     end
-    
+
     # Precompile
-    settings_pre= Boscia.create_default_settings()
+    settings_pre = Boscia.create_default_settings()
     settings_pre.branch_and_bound[:verbose] = true
     settings_pre.branch_and_bound[:print_iter] = print_iter
 
@@ -277,12 +325,17 @@ function boscia_run(
         @info "Activating callback..."
         settings_pre.branch_and_bound[:bnb_callback] = build_tree_callback()
         settings_pre.branch_and_bound[:branch_callback] = build_branch_callback()
+    elseif is_graph_matching && use_prune
+        @info "Activating graph-maching callback..."
+        settings_pre.branch_and_bound[:bnb_callback] = build_matching_tree_callback()
+        settings_pre.branch_and_bound[:branch_callback] = build_matching_branch_callback()
     end
+
     settings_pre.branch_and_bound[:time_limit] = 10
 
     use_depth ?
-    settings_pre.branch_and_bound[:traverse_strategy] = Boscia.DepthFirstSearch(favor_right) :
-    nothing
+    settings_pre.branch_and_bound[:traverse_strategy] =
+        Boscia.DepthFirstSearch(favor_right) : nothing
 
     settings_pre.heuristic[:custom_heuristics] = [swap_heu]
     settings_pre.frank_wolfe[:variant] = variant
@@ -326,9 +379,13 @@ function boscia_run(
     settings.branch_and_bound[:print_iter] = print_iter
 
     if !(is_graph_matching && !is_modified)
-        @info "Activating callback..."
+        @info "Activating iso callback..."
         settings.branch_and_bound[:bnb_callback] = build_tree_callback()
         settings.branch_and_bound[:branch_callback] = build_branch_callback()
+    elseif is_graph_matching && use_prune
+        @info "Activating graph-maching callback..."
+        settings.branch_and_bound[:bnb_callback] = build_matching_tree_callback()
+        settings.branch_and_bound[:branch_callback] = build_matching_branch_callback()
     end
 
     use_depth ?

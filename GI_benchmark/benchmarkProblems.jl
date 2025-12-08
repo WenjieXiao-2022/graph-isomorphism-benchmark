@@ -16,16 +16,10 @@ include("isIsomorphicRepeated.jl")
 include("makeSignsConsistent_reorderVec.jl")
 include("bosciaGraphIsomorphism.jl")
 include("./frank_wolf_package_graph_isomorphism.jl")
-include(
-    "./frank_wolf_package_graph_isomorphism.jl",
-)
+include("./frank_wolf_package_graph_isomorphism.jl")
 
-include(
-    "./dca_solver.jl",
-)
-include(
-    "./feasibility_solver.jl",
-)
+include("./dca_solver.jl")
+include("./feasibility_solver.jl")
 
 # Make simple, undirected, unweighted adjacency (sparse Bool)
 function _to_simple_undirected(A::SparseMatrixCSC)
@@ -87,7 +81,7 @@ function non_iso_graph(A::AbstractMatrix; edges_flipped::Int = 1)
     n = size(B, 1)
 
     # All possible undirected edges (i < j)
-    all_edges = [(i, j) for i = 1:n-1 for j = i+1:n]
+    all_edges = [(i, j) for i = 1:(n-1) for j = (i+1):n]
     max_edges = length(all_edges)
 
     # Clamp requested flips to [0, max_edges]
@@ -281,9 +275,11 @@ function bench(
         is_accel = occursin("accel", solver) ? true : false
 
         is_modified = false
+        use_prune = false
         if occursin("gm", solver)
             is_graph_matching = true
             is_modified = occursin("modified", solver) ? true : false
+            use_prune = occursin("prune", solver) ? true : false
         else
             is_graph_matching = false
         end
@@ -305,6 +301,7 @@ function bench(
             is_modified = is_modified,
             is_frac32 = is_frac32,
             is_accel = is_accel,
+            use_prune = use_prune,
         )
         if status == "OPTIMAL"
             issolved = true
