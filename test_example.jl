@@ -1,41 +1,70 @@
-using Boscia
-using SparseArrays
 using LinearAlgebra
-using Bonobo
-using FrankWolfe
-using MAT
-using Random
+using ProfileView
+using Profile
+using CSV
+include("benchmarkProblems.jl")
 
-include("boscia_graph_isomorphism.jl")
-include("frank_wolfe_graph_isomorphism.jl")
 
-function randomPermutation(A)
-    n = size(A, 1)
-    p = randperm(n)
-    I = Matrix(LinearAlgebra.I, n, n)
-    P = I[:, p]
-    B = P * A * P'
-    return B, P
-end
+# ------------------------------------------------------------
+# Solver options
+#
+# Boscia-based solvers (single string in `solver` argument):
+#   "boscia_fw"
+#   "boscia_bpcg"
+#   "boscia_dicg"
+#   "boscia_dicg_depth
+#   "boscia_dicg_depth_left"
+#   "boscia_dicg_frac32"
+#   "boscia_dicg_depth_frac32"
+#
+# Keywords:
+#   - "depth"     : use depth-first strategy in the BnB tree
+#   - "frac32"    : use ||XA-BX||_F^(3/2) objective variant
+#   - "left"      : modify branching/traversal to favor left children
+#   - "accel"     : use accelerated precomputation of Q matrix
+#
+# Graph-matching variants:
+#   add "gm" to the solver name, optionally with a flip count suffix:
+#       "boscia_dicg_gm_5"
+#       "boscia_dicg_depth_gm_10"
+#   The trailing number indicates how many edges to flip; if that
+#   number exceeds the number of edges, all edges are flipped.
+#
+# Non-isomorphism (non-iso) variants:
+#   add "noniso" similarly:
+#       "boscia_dicg_noniso_5"
+#       "boscia_dicg_depth_noniso_10"
+#
+# MIP solvers:
+#   "mip"
+#   "mip_l1"
+#   "mip_l1_nosym"
+#
+# Keywords:
+#   - "nosym" : disable symmetry computation
+#   - "gm"    : graph-matching instances
+#   - "noniso": non-isomorphism instances
+#
+# Nauty:
+#   To run nauty, use:
+#       solver = "nauty"
+#
+# Symmetry generation:
+#   For non-iso and gm cases, set:
+#       iso_generate = false
+#   For standard GI instances, you can keep:
+#       iso_generate = true
+# ------------------------------------------------------------
 
-# Read the Petersen graph matrix from .mat file
-data = matread("Paley29.mat") # Petersen.mat, BiggsSmith.mat, Paley29.mat
-A = sparse(data["M"])  # The matrix is stored as "M" in the file
-n = Int(data["n"])     # The size parameter
+# Example: run Boscia DICG on a single instance
+# @profview 
 
-println("Matrix size: ", size(A))
-println("n parameter: ", n)
-println("Matrix sparsity: ", nnz(A), " non-zeros out of ", length(A), " total elements") 
-
-# Create a permuted version of A for the graph isomorphism problem
-B, P = randomPermutation(Matrix(A))
-B = sparse(B)
-
-x_fw = frank_wolfe_graph_isomorphism(A, B, nIter=100)
-@show x_fw
-
-#x = boscia_graph_isomorphism(A, B, print_iter=10, variant=Boscia.BPCG(), fw_iter=10)
-#@show x
-
-x = boscia_graph_isomorphism(A, B, print_iter=10, variant=Boscia.BPCG(), mip=true, fw_iter=100)
-@show x
+bench(
+    "latin_3_9",  # graph name
+    3;        # random seed
+    solver      = "boscia_DFS_OBBT_star_clique",
+    time_limit  = 3600,
+    write       = false,
+    format      = "mat",
+    iso_generate = true,
+)
