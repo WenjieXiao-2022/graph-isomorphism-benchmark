@@ -53,10 +53,6 @@ end
 function OBBT_preprocess(A, B, n, blmo)
     int_vars = collect(1:(n^2))
 
-    if blmo == nothing
-        blmo = CLO.BirkhoffLMO(n, int_vars)
-    end
-
     function build_function_gradient_fixing(A_mat, B_mat, i, j, fix_to_zero = true)
         B2 = Matrix(1.0B_mat^2)
         A2 = Matrix(1.0A_mat^2)
@@ -557,8 +553,8 @@ end
 function boscia_run(
     A,
     B;
-    solver = "boscia_bpcg",
-    time_limit = 300,
+    solver = "boscia_dicg",
+    time_limit = 3600,
     verbose = true,
     print_iter = 100,
     fw_verbose = false,
@@ -685,7 +681,7 @@ function boscia_run(
         n;
         use_clique = use_clique,
         use_star = use_star,
-        use_OBBT= use_OBBT,
+        use_OBBT = use_OBBT,
         iso_generate = iso_generate,
         is_graph_matching = is_graph_matching,
         time_limit = time_limit,
@@ -734,7 +730,7 @@ function boscia_run(
             @show result[:dual_bound]
             @assert result[:dual_bound] > 0.0
             status = "OPTIMAL"
-            @info "Is not isomorphic (proved via dual bound)"
+            @info "Is not isomorphic (certified via dual bound)"
         elseif iso_generate && !is_graph_matching
             # iso_generate=true means graphs are isomorphic, so we must find an isomorphism
             @error "iso_generate=true but A ≈ X' * B * X failed. Status: $status, X: $X"

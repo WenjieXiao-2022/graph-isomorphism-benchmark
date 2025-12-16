@@ -8,63 +8,64 @@ include("benchmarkProblems.jl")
 # ------------------------------------------------------------
 # Solver options
 #
-# Boscia-based solvers (single string in `solver` argument):
-#   "boscia_fw"
-#   "boscia_bpcg"
-#   "boscia_dicg"
-#   "boscia_dicg_depth
-#   "boscia_dicg_depth_left"
-#   "boscia_dicg_frac32"
-#   "boscia_dicg_depth_frac32"
+# Boscia-based solvers:
+#   - "boscia"
+#   - "boscia_DFS"
+#   - "boscia_DFS_left"
 #
-# Keywords:
-#   - "depth"     : use depth-first strategy in the BnB tree
-#   - "frac32"    : use ||XA-BX||_F^(3/2) objective variant
-#   - "left"      : modify branching/traversal to favor left children
-#   - "accel"     : use accelerated precomputation of Q matrix
+#   Preprocessing methods:
+#     The following preprocessing techniques are supported:
+#       • clique
+#       • star
+#       • OBBT
 #
-# Graph-matching variants:
-#   add "gm" to the solver name, optionally with a flip count suffix:
-#       "boscia_dicg_gm_5"
-#       "boscia_dicg_depth_gm_10"
-#   The trailing number indicates how many edges to flip; if that
-#   number exceeds the number of edges, all edges are flipped.
+#     Preprocessing can be activated by appending the corresponding
+#     keywords to the solver name. For example:
+#       - "boscia_DFS_star"
+#       - "boscia_DFS_clique_star"
 #
-# Non-isomorphism (non-iso) variants:
-#   add "noniso" similarly:
-#       "boscia_dicg_noniso_5"
-#       "boscia_dicg_depth_noniso_10"
+#   Frank–Wolfe (FW) variants:
+#     Different FW variants can be selected. By default, DICG is used.
+#     The classical FW and BPCG variants are also supported.
 #
-# MIP solvers:
-#   "mip"
-#   "mip_l1"
-#   "mip_l1_nosym"
+#     The FW variant can be selected by appending the corresponding
+#     keyword to the solver name. For example:
+#       - "boscia_fw"
+#       - "boscia_bpcg"
 #
-# Keywords:
-#   - "nosym" : disable symmetry computation
-#   - "gm"    : graph-matching instances
-#   - "noniso": non-isomorphism instances
+# Non-isomorphism testing:
+#   Set `iso_generate = false` and specify the number of edges to flip
+#   directly in the solver name. For example:
+#       - "boscia_DFS_5"
 #
-# Nauty:
-#   To run nauty, use:
-#       solver = "nauty"
+# Graph-matching (GM) variants:
+#   - Add the suffix "GM" to any Boscia-based solver name, optionally
+#     followed by an integer specifying the number of edge flips.
 #
-# Symmetry generation:
-#   For non-iso and gm cases, set:
-#       iso_generate = false
-#   For standard GI instances, you can keep:
-#       iso_generate = true
+#   Examples:
+#       - "boscia_DFS_GM_5"
+#       - "boscia_DFS_left_GM_10"
+#
+#   The trailing integer indicates the number of edges to flip. If this
+#   number exceeds the total number of edges in the graph, all edges
+#   are flipped.
+#
+# Other available solvers:
+#   - "nauty"
+#   - "mip"
+#   - "dca"
+#   - "penalty"
+#
 # ------------------------------------------------------------
 
 # Example: run Boscia DICG on a single instance
-# @profview 
 
 bench(
     "latin_3_9",  # graph name
     3;        # random seed
-    solver      = "boscia_DFS_OBBT_star_clique",
+    solver      = "boscia_DFS_5",
     time_limit  = 3600,
     write       = false,
     format      = "mat",
-    iso_generate = true,
+    iso_generate = false,
 )
