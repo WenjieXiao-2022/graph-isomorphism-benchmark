@@ -96,14 +96,7 @@ function load_graph(name::String; format = "mat")
         data = matread(filepath)
         A = sparse(data["A"])
         n = Int(data["n"])
-
-        # TODO: Remove test code - complementary graph transformation
-        # Uncomment below if you need to test with complementary graphs:
-        # I_mat = Matrix{Float64}(LinearAlgebra.I, n, n)
-        # I_sparse = sparse(I_mat)
-        # A = I_sparse - A
-        # A[diagind(A)] .= 0
-
+        
         return SparseMatrixCSC{Int,Int}(A), n
     elseif format == "dimacs"
         base = "./more_benchmark"

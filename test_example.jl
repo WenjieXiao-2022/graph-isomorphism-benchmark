@@ -63,9 +63,9 @@ include("benchmarkProblems.jl")
 bench(
     "latin_3_9",  # graph name
     3;        # random seed
-    solver      = "boscia_DFS_5",
+    solver      = "boscia_DFS",
     time_limit  = 3600,
     write       = false,
     format      = "mat",
-    iso_generate = false,
+    iso_generate = true,
 )
