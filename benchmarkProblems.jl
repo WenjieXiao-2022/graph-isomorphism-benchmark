@@ -185,7 +185,7 @@ function bench(
     end
 
     if write && issolved
-        result_path = "/home/htc/wexiao/project/graph_isomorphism/BenchmarkProblems/julia_benchmarkProblems/slurm/result_$(format)/$solver"
+        result_path = "./result_$(format)/$solver"
         if !ispath(result_path)
             mkpath(result_path)
         end
