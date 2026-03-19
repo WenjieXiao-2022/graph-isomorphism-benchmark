@@ -8,9 +8,7 @@ using CSV
 using DataFrames
 using Hungarian
 using FrankWolfe
-using Boscia
 using NautyGraphs
-using Graphs
 
 include("utilities.jl")
 include("spectral.jl")

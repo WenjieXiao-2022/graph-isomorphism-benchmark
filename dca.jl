@@ -1,6 +1,4 @@
 using FrankWolfe
-using LinearAlgebra
-using Hungarian
 
 # DCA (Difference of Convex Algorithm) example with quadratic functions
 # We want to minimize φ(x) = f(x) - g(x) over the Birkhoff polytope

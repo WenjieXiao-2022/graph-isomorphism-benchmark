@@ -1,5 +1,4 @@
 using JuMP
-using LinearAlgebra
 using SCIP
 
 

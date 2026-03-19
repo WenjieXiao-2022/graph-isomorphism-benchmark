@@ -1,8 +1,6 @@
 using LinearAlgebra
-using SparseArrays
 using JuMP
 using SCIP
-using FrankWolfe
 
 """
 Frank-Wolfe solver for the graph isomorphism problem. A and B are the

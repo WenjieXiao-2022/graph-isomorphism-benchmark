@@ -3,10 +3,7 @@ using SparseArrays
 using LinearAlgebra
 using Bonobo
 using FrankWolfe
-using MAT
 using Random
-using CSV
-using DataFrames
 using CombinatorialLinearOracles
 using Graphs
 const CLO = CombinatorialLinearOracles

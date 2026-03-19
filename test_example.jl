@@ -1,7 +1,3 @@
-using LinearAlgebra
-using ProfileView
-using Profile
-using CSV
 include("benchmarkProblems.jl")
 
 
@@ -63,7 +59,7 @@ include("benchmarkProblems.jl")
 bench(
     "latin_3_9",  # graph name
     3;        # random seed
-    solver      = "boscia_DFS",
+    solver      = "boscia",
     time_limit  = 3600,
     write       = false,
     format      = "mat",
