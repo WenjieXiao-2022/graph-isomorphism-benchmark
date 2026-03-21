@@ -182,7 +182,7 @@ function bench(
     end
 
     if write && issolved
-        result_path = "/home/htc/wexiao/project/graph_isomorphism/results/$solver"
+        result_path = "./results/$solver"
         if !ispath(result_path)
             mkpath(result_path)
         end
