@@ -23,13 +23,12 @@ function bench(
     solver = "spectral",
     time_limit = Inf,
     write = false,
-    format = "dimacs",
     iso_generate = true,
 )
     Random.seed!(seed)
     println("========================================================================")
     # load graph
-    A, n = load_graph(graph; format = format)
+    A, n = load_graph(graph)
     issolved = false
     @assert size(A, 1) == size(A, 2) "Graph $graph not square"
     if !issymmetric(A)
@@ -51,7 +50,7 @@ function bench(
         if occursin("cospectral", graph)
             A1, P1 = randomPermutation(A)
             cospectral_graph = "cospectral_$seed"
-            B, n = load_graph(cospectral_graph; format = format)
+            B, n = load_graph(cospectral_graph)
             @info "The non-isomorphic instance pair is $graph and $(cospectral_graph)..."
             A2, P2 = randomPermutation(B)
         else
@@ -183,7 +182,7 @@ function bench(
     end
 
     if write && issolved
-        result_path = "./result_$(format)/$solver"
+        result_path = "/home/htc/wexiao/project/graph_isomorphism/results/$solver"
         if !ispath(result_path)
             mkpath(result_path)
         end

@@ -62,6 +62,5 @@ bench(
     solver      = "boscia_DFS",
     time_limit  = 3600,
     write       = false,
-    format      = "mat",
     iso_generate = true,
 )

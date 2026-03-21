@@ -1,3 +1,9 @@
+using LinearAlgebra
+using SparseArrays
+using Random
+using MAT
+using FrankWolfe
+
 # Make simple, undirected, unweighted adjacency (sparse Bool)
 function _to_simple_undirected(A::SparseMatrixCSC)
     A = sparse(A)
@@ -80,48 +86,39 @@ end
 """
     load_graph(name::String) -> A, n
 
-Load a benchmark graph adjacency matrix by name.
+Load a benchmark graph adjacency matrix by name from `./test_instances`.
 
-Expects `.mat` files created from the exported `.m` graph functions,
-each containing variables `A` (adjacency matrix) and `n` (number of nodes).
+The function searches recursively for either `<name>.mat` or `<name>.dimacs`
+and parses based on the discovered extension.
 """
-function load_graph(name::String; format = "mat")
-    if format == "mat"
+function load_graph(name::String)
+    base = "./test_instances"
+    target_mat = name * ".mat"
+    target_dimacs = name * ".dimacs"
+    filepath = nothing
+    ext = nothing
 
-        base = "./export_mat"
-   
-        filepath = joinpath(base, name * ".mat")
-        isnothing(filepath) && error("No file named $name found under $base")
-        # read the data
+    for (root, _, files) in walkdir(base)
+        if target_mat in files
+            filepath = joinpath(root, target_mat)
+            ext = ".mat"
+            break
+        elseif target_dimacs in files
+            filepath = joinpath(root, target_dimacs)
+            ext = ".dimacs"
+            break
+        end
+    end
+
+    isnothing(filepath) &&
+        error("No graph named $name found under $base (expected .mat or .dimacs)")
+
+    if ext == ".mat"
         data = matread(filepath)
         A = sparse(data["A"])
         n = Int(data["n"])
-        
         return SparseMatrixCSC{Int,Int}(A), n
-    elseif format == "dimacs"
-        base = "./more_benchmark"
-        noniso_base = "./cospectral_benchmark"
-        target = name * ".dimacs"
-        filepath = nothing
-        for (root, _, files) in walkdir(base)
-            if target in files
-                filepath = joinpath(root, target)
-                break  # stop immediately once found
-            end
-        end
-
-        if isnothing(filepath)
-            for (root, _, files) in walkdir(noniso_base)
-                if target in files
-                    filepath = joinpath(root, target)
-                    break  # stop immediately once found
-                end
-            end
-        end
-
-        isnothing(filepath) && error("No file named $target found under $base or $(noniso_base)")
-
-        #read the data
+    elseif ext == ".dimacs"
         n = 0
         I = Int[]
         J = Int[]
@@ -152,17 +149,10 @@ function load_graph(name::String; format = "mat")
 
         n > 0 || error("Could not determine number of nodes in $filepath")
 
-        A = sparse(I, J, ones(Int, length(I)), n, n)
-        return A, n
+        return sparse(I, J, ones(Int, length(I)), n, n), n
     else
-        error("Unsupported format: $format")
+        error("Unsupported graph extension for file: $filepath")
     end
-
-    if !isfile(filepath)
-        error("Graph file not found: $filepath. Did you run the conversion step?")
-    end
-
-    return A, n
 end
 
 """
