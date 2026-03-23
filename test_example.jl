@@ -9,16 +9,9 @@ include("benchmarkProblems.jl")
 #   - "boscia_DFS"
 #   - "boscia_DFS_left"
 #
-#   Preprocessing methods:
-#     The following preprocessing techniques are supported:
-#       • clique
-#       • star
-#       • OBBT
-#
-#     Preprocessing can be activated by appending the corresponding
-#     keywords to the solver name. For example:
-#       - "boscia_DFS_star"
-#       - "boscia_DFS_clique_star"
+#   Preprocessing:
+#     Append "rdc" to run Frank–Wolfe reduced-cost fixing before branch-and-bound.
+#     Example: "boscia_DFS_rdc"
 #
 #   Frank–Wolfe (FW) variants:
 #     Different FW variants can be selected. By default, DICG is used.
@@ -29,28 +22,29 @@ include("benchmarkProblems.jl")
 #       - "boscia_fw"
 #       - "boscia_bpcg"
 #
-# Non-isomorphism testing:
-#   Set `iso_generate = false` and specify the number of edges to flip
-#   directly in the solver name. For example:
-#       - "boscia_DFS_5"
-#
-# Graph-matching (GM) variants:
-#   - Add the suffix "GM" to any Boscia-based solver name, optionally
-#     followed by an integer specifying the number of edge flips.
-#
-#   Examples:
-#       - "boscia_DFS_GM_5"
-#       - "boscia_DFS_left_GM_10"
-#
-#   The trailing integer indicates the number of edges to flip. If this
-#   number exceeds the total number of edges in the graph, all edges
-#   are flipped.
-#
 # Other available solvers:
-#   - "nauty"
 #   - "mip"
-#   - "dca"
-#   - "penalty"
+#
+# ------------------------------------------------------------
+# GOE synthetic instances (is_GOE_graph = true)
+#
+#   These use the Gaussian Orthogonal Ensemble (GOE): a random real symmetric
+#   matrix A with independent upper-triangular entries, diagonal N(0, 2/n) and
+#   off-diagonal N(0, 1/n) (see generate_wigner_goe in utilities.jl).
+#
+#   generate_easy_boscia_instance builds a planted graph-matching pair:
+#     - A_noisy = A + sigma * Z, with Z another independent GOE draw
+#     - sigma = n^(noise_threshold - epsilon)  (defaults: noise_threshold=-1,
+#       epsilon=0.1 in utilities.jl; bench passes noise_threshold_GOE)
+#     - B is the same matrix A_noisy after the same row and column permutation
+#       (planted map P in Pi_star / true_mapping).
+#
+#   bench still passes the clean A as the first matrix and B as the second
+#   (see benchmarkProblems.jl). The `graph` argument is ignored for the instance
+#   but can still label CSV output when write = true.
+#
+#   Solver names may include the substring "GOE" for your own bookkeeping; only
+#   tokens like DFS, left, rdc, fw, bpcg change Boscia’s behavior.
 #
 # ------------------------------------------------------------
 
@@ -59,8 +53,10 @@ include("benchmarkProblems.jl")
 bench(
     "latin_3_9",  # graph name
     3;        # random seed
-    solver      = "boscia_DFS",
+    solver      = "boscia_GOE",
     time_limit  = 3600,
     write       = false,
-    iso_generate = true,
+    is_GOE_graph = true,
+    num_nodes_GOE = 50,
+    # noise_threshold_GOE = -0.5,
 )

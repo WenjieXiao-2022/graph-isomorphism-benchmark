@@ -5,7 +5,7 @@ using SCIP
 """
     build_gi_mip_model(A, B; solver=:SCIP, time_limit=60.0, formulation=:feasibility)
 
-Build a MIP model for graph isomorphism.
+Build a MIP model for graph matching: find a permutation matrix ``X`` with ``X A = B X``.
 
 formulation:
     :feasibility  -> original model: XA == BX, objective = 0
@@ -100,7 +100,6 @@ function solve_gi_mip(
     time_limit = 60.0,
     formulation::Symbol = :feasibility,
     use_symmetry::Bool = true,
-    iso_generate::Bool = true,
 )
 
     t0 = time()
@@ -137,18 +136,17 @@ function solve_gi_mip(
         println("‖XA - BX‖_F^2 = ", resnorm)
         println("‖X‖_F^2 = ", sum(abs2, Xperm))
 
-        if iso_generate && (!isapprox(XA, BX; atol = 1e-6, rtol = 1e-6) || !(sum(abs2, Xperm) == n))
-            println("Incorrect permutation matrix is returned")
+        if !isapprox(XA, BX; atol = 1e-6, rtol = 1e-6) || sum(abs2, Xperm) != n
+            println("Feasible status but permutation constraints not satisfied numerically")
             return false, solving_time
         end
 
         return true, solving_time
     elseif term_status == MOI.INFEASIBLE
-        println("No feasible points...")
-        println("Graphs are non-isomorphic!")
-        return !iso_generate, solving_time
+        println("MIP reports infeasible.")
+        return false, solving_time
     else
-        println("No feasible permutation matrix found (graphs likely non-isomorphic).")
+        println("MIP finished without an optimal or feasible point.")
         return false, solving_time
     end
 end

@@ -1,17 +1,15 @@
-# GraphIsomorphismsWithBoscia
+# Graph-matching benchmark (Boscia / MIP)
 
-Julia code for benchmarking **graph isomorphism (GI)** solvers, with a focus on **Boscia** (branch-and-bound + Frank–Wolfe over the Birkhoff polytope).
+Julia code for benchmarking **graph matching** and related solvers built around **Boscia** (branch-and-bound + Frank–Wolfe over the Birkhoff polytope). Continuous baselines that target plain graph isomorphism (spectral, penalty Frank–Wolfe, DCA) are not included here.
 
 The main entrypoint is `test_example.jl`, which calls `bench(...)` from `benchmarkProblems.jl`.
 
 ## What’s in this folder
 
-- **`benchmarkProblems.jl`**: `bench(graph, seed; solver=..., format=..., time_limit=..., iso_generate=...)` loads an instance, generates an isomorphic or non-isomorphic pair, runs the chosen solver, and optionally writes a CSV result.
-- **`bosciaGraphIsomorphism.jl`**: Boscia-based GI solvers, including optional preprocessing (clqiue, star and OBBT) routines.
-- **`spectral.jl`**: spectral + assignment-based isomorphism check (`isIsomorphic`, `isIsomorphicRepeated`) using the Hungarian algorithm.
-- **`mip.jl`**: a MIP formulation of GI (SCIP / HiGHS via JuMP).
-- **`penalty.jl`**, **`dca.jl`**: additional continuous optimization baselines.
-- **`utilities.jl`**: graph loading and helper utilities (`load_graph`, `randomPermutation`, `non_iso_graph`, …).
+- **`benchmarkProblems.jl`**: `bench(graph, seed; solver=..., time_limit=..., write=...)` loads an instance, builds two random relabelings of the same graph (a feasible graph-matching instance), runs the chosen solver, and optionally writes a CSV result.
+- **`bosciaGraphIsomorphism.jl`**: Boscia-based graph-matching solver, including optional preprocessing (clique, star, OBBT).
+- **`mip.jl`**: a MIP formulation (SCIP / HiGHS via JuMP).
+- **`utilities.jl`**: graph loading and helper utilities (`load_graph`, `randomPermutation`, …).
 - **`test_example.jl`**: a minimal runnable example (edit solver/options here).
 
 ## Data / folder layout (expected by `load_graph`)
@@ -26,14 +24,13 @@ If you use your own dataset layout, update `load_graph` in `utilities.jl`.
 
 ## Install & run
 
-From this directory, start Julia and install the required packages (the code uses `Boscia`, `FrankWolfe`, `Graphs`, `NautyGraphs`, `Hungarian`, `JuMP`, `SCIP`, `HiGHS`, `MAT`, `CSV`, `DataFrames`, etc.):
+From this directory, start Julia and install the required packages (the code uses `Boscia`, `FrankWolfe`, `JuMP`, `SCIP`, `HiGHS`, `MAT`, `CSV`, `DataFrames`, etc.):
 
 ```julia
 import Pkg
 Pkg.activate(".")
 Pkg.add([
   "Boscia", "Bonobo", "FrankWolfe", "CombinatorialLinearOracles",
-  "Graphs", "NautyGraphs", "Hungarian",
   "JuMP", "SCIP", "HiGHS",
   "MAT", "CSV", "DataFrames",
 ])
@@ -49,24 +46,11 @@ julia test_example.jl
 
 `bench(...; solver="...")` dispatches based on substrings in the solver name:
 
-- **Boscia**: any solver string containing `"boscia"` triggers `boscia_run(...)`.
+- **Boscia**: any solver string containing `"boscia"` triggers `boscia_run(...)` (graph-matching formulation).
   - **Traversal**: `"DFS"` enables depth-first traversal; `"left"` can be used in the name to prefer the left branch in depth-first mode.
   - **Frank–Wolfe variant**: `"fw"` / `"bpcg"` / `"dicg"` selects the FW variant (DICG is the default in `boscia_run`).
-  - **Preprocessing (warm-start)**: append any of:
-    - `"clique"`: clique-based fixings
-    - `"star"`: star-based fixings
-    - `"OBBT"`: bound-tightening based fixings
-    Example: `solver="boscia_DFS_clique_star_OBBT"`.
-- **Nauty**: `solver="nauty"` uses `NautyGraphs` to test isomorphism.
-- **Spectral**: `solver="spectral"` uses the spectral + Hungarian assignment approach.
+  - **Preprocessing**: append **`rdc`** to run Frank–Wolfe reduced-cost fixing before branch-and-bound (see `FW_reduced_cost_preprocess` in `bosciaGraphIsomorphism.jl`). Example: `solver="boscia_DFS_rdc"`.
 - **MIP**: any solver containing `"mip"` runs the MIP approach in `mip.jl`.
-- **DCA**: any solver containing `"dca"` runs the DCA baseline (`dca.jl`).
-- **Penalty/FW**: any solver containing `"penalty"` runs the penalty/FW baseline (`penalty.jl`).
-
-## Generating non-isomorphic pairs
-
-`bench(...; iso_generate=false)` creates a non-isomorphic instance by **flipping edges** (see `non_iso_graph` in `utilities.jl`).
-You can encode the number of flips as a trailing suffix in the solver string, e.g. `solver="boscia_DFS_5"` to flip 5 edges.
 
 ## Output (optional CSV)
 

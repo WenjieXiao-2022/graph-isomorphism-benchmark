@@ -51,7 +51,7 @@ function get_graph_names_paths(root::String)
     return names, paths
 end
 
-function randomPermutation(A::AbstractMatrix{})
+function randomPermutation(A::AbstractMatrix)
     n = size(A, 1)
     p = randperm(n)
     P = sparse(1:n, p, ones(Int, n), n, n)  # sparse permutation matrix
@@ -190,4 +190,35 @@ function solve_quadprog_fw_package(n, A, B; time_limit = 300)
         timeout = time_limit,
     )
     return x, active_set
+end
+
+function generate_wigner_goe(n::Int)
+    M = zeros(Float64, n, n)
+    for i = 1:n
+        for j = i:n
+            if i == j
+                M[i, j] = randn() * sqrt(2.0 / n)
+            else
+                val = randn() * sqrt(1.0 / n)
+                M[i, j] = val
+                M[j, i] = val
+            end
+        end
+    end
+    return M
+end
+
+function generate_easy_boscia_instance(n::Int; noise_threshold::Float64 = -1.0, epsilon::Float64 = 0.1)
+    sigma = n^(noise_threshold - epsilon)
+    println("Graph size: $n x $n | Theoretical safe noise (sigma): $sigma")
+    A = generate_wigner_goe(n)
+    Z = generate_wigner_goe(n)
+    p = randperm(n)
+    Pi_star = zeros(Int, n, n)
+    for i = 1:n
+        Pi_star[i, p[i]] = 1
+    end
+    A_noisy = A + sigma * Z
+    B = A_noisy[p, p]
+    return A, B, Pi_star, p
 end
