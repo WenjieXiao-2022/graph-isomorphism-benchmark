@@ -12,11 +12,11 @@ include("bosciaGraphIsomorphism.jl")
 include("mip.jl")
 
 function bench(
-    graph,
     seed;
     solver = "boscia_DFS",
     time_limit = Inf,
     write = false,
+    nauty_graph = "",
     is_GOE_graph = false,
     num_nodes_GOE = 10,
     noise_threshold_GOE = -1.0,
@@ -38,7 +38,7 @@ function bench(
         A1, A2, P, _true_mapping = generate_easy_boscia_instance(n; noise_threshold = noise_threshold_GOE)
         @printf "\nGOE synthetic (n = %d): \n" n
     else
-        A, n = load_graph(graph)
+        A, n = load_graph(nauty_graph)
         @assert size(A, 1) == size(A, 2) "Graph $graph not square"
         if !issymmetric(A)
             error("Graph $graph not undirected (A != A').")
