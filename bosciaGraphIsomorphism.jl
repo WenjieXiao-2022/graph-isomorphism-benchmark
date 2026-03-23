@@ -547,6 +547,58 @@ function build_function_gradient(A, B, n)
     return f_acc2, grad_acc2!, f_acc2_check
 end
 
+function build_exp_function_gradient(A, B, n, tau)
+    # Precompute Matrix Exponentials
+    EA = exp(tau * Matrix(1.0A))
+    EB = exp(tau * Matrix(1.0B))
+    
+    # Precompute squares for the gradient: 2(X*EA^2 - 2*EB*X*EA + EB^2*X)
+    EA2 = EA^2
+    EB2 = EB^2
+    
+    # Pre-allocate caches
+    R = zeros(n, n)
+    EBX = zeros(n, n)
+
+    # Objective function using Frobenius norm [cite: 45]
+    function f_exp(x)
+        X = reshape(x, n, n)
+        # R = X * EA - EB * X
+        mul!(R, X, EA)
+        mul!(R, EB, X, -1, 1)
+        return norm(R)^2
+    end
+
+    # Gradient computation
+    function grad_exp!(storage, x)
+        X = reshape(x, n, n)
+        S = reshape(storage, n, n)
+        
+        # Cache EB * X for the middle term
+        mul!(EBX, EB, X)
+        
+        # Term 1: 2 * X * EA^2
+        mul!(S, X, EA2, 2, 0)
+        
+        # Term 2: -4 * (EB * X) * EA
+        mul!(S, EBX, EA, -4, 1)
+        
+        # Term 3: 2 * EB^2 * X
+        mul!(S, EB2, X, 2, 1)
+        
+        return nothing
+    end
+
+    # Optional check function
+    function f_exp_check(x)
+        X = reshape(x, n, n)
+        res = norm(X * EA - EB * X)^2
+        return res
+    end
+
+    return f_exp, grad_exp!, f_exp_check
+end
+
 function boscia_run(
     A,
     B;

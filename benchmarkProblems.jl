@@ -182,7 +182,7 @@ function bench(
     end
 
     if write && issolved
-        result_path = "./results/$solver"
+        result_path = "/home/htc/wexiao/project/graph_isomorphism/slurm_script/GI/results/$solver"
         if !ispath(result_path)
             mkpath(result_path)
         end
