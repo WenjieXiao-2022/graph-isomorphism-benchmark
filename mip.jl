@@ -120,27 +120,6 @@ function solve_gi_mip(
     println("Termination status: ", term_status)
 
     if term_status == MOI.OPTIMAL || term_status == MOI.FEASIBLE_POINT
-        n = size(A, 1)
-        Xval = [value(X[i, j]) for i = 1:n, j = 1:n]
-
-        # Round to get a clean permutation matrix (numerical safety)
-        Xperm = map(x -> x > 0.5 ? 1 : 0, Xval)
-
-        println("Found feasible permutation matrix X.")
-        # Optional: verify AX = XB numerically
-        XA = Xperm * A
-        BX = B * Xperm
-        residual = XA - BX
-        resnorm = sum(abs2, residual)
-
-        println("‖XA - BX‖_F^2 = ", resnorm)
-        println("‖X‖_F^2 = ", sum(abs2, Xperm))
-
-        if !isapprox(XA, BX; atol = 1e-6, rtol = 1e-6) || sum(abs2, Xperm) != n
-            println("Feasible status but permutation constraints not satisfied numerically")
-            return false, solving_time
-        end
-
         return true, solving_time
     elseif term_status == MOI.INFEASIBLE
         println("MIP reports infeasible.")

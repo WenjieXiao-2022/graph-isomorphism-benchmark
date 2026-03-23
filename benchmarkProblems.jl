@@ -17,9 +17,9 @@ function bench(
     time_limit = Inf,
     write = false,
     nauty_graph = "",
-    is_GOE_graph = false,
+    is_GOE_graph = true,
     num_nodes_GOE = 10,
-    noise_threshold_GOE = -1.0,
+    noise_level = nothing
 )
     Random.seed!(seed)
     println("========================================================================")
@@ -35,15 +35,35 @@ function bench(
 
     if is_GOE_graph
         n = num_nodes_GOE
-        A1, A2, P, _true_mapping = generate_easy_boscia_instance(n; noise_threshold = noise_threshold_GOE)
+
+        if noise_level == "small_perm"
+            noise_threshold_GOE = -1.0
+            GOE_epsilon = 0.1
+        elseif noise_level == "intermediate"
+            noise_threshold_GOE = -1.0
+            GOE_epsilon = -0.1
+        elseif noise_level == "well_sep"
+            noise_threshold_GOE = -0.5
+            GOE_epsilon = -0.1
+        elseif noise_level === nothing
+            error("Please provide the nosie level.")
+        else
+            error("$(noise_level) is not supoorted.")
+        end
+
+        A1, A2, P, _true_mapping = generate_easy_boscia_instance(
+            n;
+            noise_threshold = noise_threshold_GOE,
+            epsilon = GOE_epsilon,
+        )
         @printf "\nGOE synthetic (n = %d): \n" n
     else
         A, n = load_graph(nauty_graph)
-        @assert size(A, 1) == size(A, 2) "Graph $graph not square"
+        @assert size(A, 1) == size(A, 2) "Graph $(nauty_graph) not square"
         if !issymmetric(A)
-            error("Graph $graph not undirected (A != A').")
+            error("Graph $(nauty_graph) not undirected (A != A').")
         end
-        @printf "\n%s (n = %d): \n" graph n
+        @printf "\n%s (n = %d): \n" nauty_graph n
         # Two independent relabelings of the same graph (feasible graph-matching instance)
         A1, _ = randomPermutation(A)
         A2, _ = randomPermutation(A)
@@ -96,13 +116,13 @@ function bench(
     end
 
     if write && issolved
-        result_path = "./results/$solver"
+        result_path = "/home/htc/wexiao/project/graph_isomorphism/slurm_script/GM/results/$(noise_level)/$solver"
         if !ispath(result_path)
             mkpath(result_path)
         end
 
 
-        filename = joinpath(result_path, "$(graph)_$(seed).csv")
+        filename = joinpath(result_path, "$(num_nodes_GOE)_$(seed).csv")
 
         if contains(solver, "boscia")
             if result !== nothing
@@ -124,7 +144,7 @@ function bench(
             fixing_time_val = sum(times_tuple)
 
             df = DataFrame(
-                graph = [graph],
+                graph = [nauty_graph],
                 time = [solving_time],
                 fixing_time = [fixing_time_val],
                 # number_of_fixings counts only actual fixings iterations
@@ -140,7 +160,7 @@ function bench(
             )
         else
             df = DataFrame(
-                graph = [graph],
+                graph = [nauty_graph],
                 time = [solving_time],
                 rel_dual_gap = [rel_dual_gap],
                 abs_dual_gap = [abs_dual_gap],
