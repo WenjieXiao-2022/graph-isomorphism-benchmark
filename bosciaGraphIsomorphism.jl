@@ -87,176 +87,12 @@ function build_exp_function_gradient(A, B, n, tau)
     return f_exp, grad_exp!
 end
 
-function OBBT_preprocess(
-    A,
-    B,
-    n,
-    blmo;
-    boscia_node_limit = 3,
-    boscia_fw_iter = 100000,
-    obbt_fw_iter = 100,
-    tol = 1e-8,
-    verbose = false,
-    try_fix_to_one = true,
-)
-
-    @info "Running OBBT preprocess for graph matching"
-
-    f, grad! = build_function_gradient(A, B, n)
-
-    # ==========================================================
-    # 1. Get a good UB from a short Boscia run
-    # ==========================================================
-    settings = Boscia.create_default_settings()
-    settings.branch_and_bound[:node_limit] = boscia_node_limit
-    settings.branch_and_bound[:verbose] = verbose
-    settings.frank_wolfe[:max_fw_iter] = boscia_fw_iter
-    settings.frank_wolfe[:lazy] = false
-    settings.frank_wolfe[:variant] = Boscia.DecompositionInvariantConditionalGradient()
-
-    blmo_pre = CLO.BirkhoffLMO(n, collect(1:n^2))
-    x_ub, _, result = Boscia.solve(f, grad!, blmo_pre; settings = settings)
-    UB = result[:primal_objective]
-
-    @info "OBBT incumbent UB = $UB"
-
-    # ==========================================================
-    # 2. Local helper: copy current bounds of blmo
-    # ==========================================================
-    function copy_blmo_with_bounds(blmo, n)
-        new_blmo = CLO.BirkhoffLMO(n, collect(1:n^2))
-        new_blmo.lower_bounds .= copy(blmo.lower_bounds)
-        new_blmo.upper_bounds .= copy(blmo.upper_bounds)
-        return new_blmo
-    end
-
-    # ==========================================================
-    # 3. Callback for restricted FW solves
-    # stop as soon as LB >= UB - tol
-    # ==========================================================
-    function build_FW_callback()
-        return function callback(state, kwargs...)
-            LB = state.primal - state.dual_gap
-            return LB < UB - tol
-        end
-    end
-
-    # ==========================================================
-    # 4. Solve restricted relaxation and return LB
-    # ==========================================================
-    function restricted_lower_bound(test_blmo)
-        x0 = FrankWolfe.compute_extreme_point(test_blmo, ones(n^2))
-        fw_res = FrankWolfe.decomposition_invariant_conditional_gradient(
-            f,
-            grad!,
-            test_blmo,
-            x0,
-            verbose = false,
-            max_iteration = obbt_fw_iter,
-            lazy = false,
-            trajectory = true,
-            callback = build_FW_callback(),
-        )
-        LB = fw_res.primal - fw_res.dual_gap
-        return LB, fw_res
-    end
-
-    # ==========================================================
-    # 5. Main OBBT loop
-    # ==========================================================
-    iters_OBBT = Int[]
-    num_checked = 0
-    num_fixed_to_zero = 0
-    num_fixed_to_one = 0
-
-    for i in 1:n
-        for j in 1:n
-            idx = (j - 1) * n + i
-
-            # skip already fixed variables
-            if blmo.upper_bounds[idx] == 0.0 || blmo.lower_bounds[idx] == 1.0
-                continue
-            end
-
-            num_checked += 1
-
-            # --------------------------------------------------
-            # Test x[i,j] = 1
-            # If LB( x[i,j]=1 ) >= UB, then fix x[i,j]=0
-            # --------------------------------------------------
-            test_blmo_one = copy_blmo_with_bounds(blmo, n)
-            test_blmo_one.lower_bounds[idx] = 1.0
-            test_blmo_one.upper_bounds[idx] = 1.0
-
-            if Boscia.check_feasibility(test_blmo_one) != Boscia.OPTIMAL
-                blmo.upper_bounds[idx] = 0.0
-                num_fixed_to_zero += 1
-                continue
-            end
-
-            LB_one, fw_res_one = restricted_lower_bound(test_blmo_one)
-
-            if !isempty(fw_res_one.traj_data)
-                push!(iters_OBBT, fw_res_one.traj_data[end][1])
-            end
-
-            if LB_one >= UB - tol
-                blmo.upper_bounds[idx] = 0.0
-                num_fixed_to_zero += 1
-                continue
-            end
-
-            # --------------------------------------------------
-            # Test x[i,j] = 0
-            # If LB( x[i,j]=0 ) >= UB, then fix x[i,j]=1
-            # --------------------------------------------------
-            if try_fix_to_one
-                test_blmo_zero = copy_blmo_with_bounds(blmo, n)
-                test_blmo_zero.upper_bounds[idx] = 0.0
-
-                if Boscia.check_feasibility(test_blmo_zero) != Boscia.OPTIMAL
-                    blmo.lower_bounds[idx] = 1.0
-                    num_fixed_to_one += 1
-                    continue
-                end
-
-                LB_zero, fw_res_zero = restricted_lower_bound(test_blmo_zero)
-
-                if !isempty(fw_res_zero.traj_data)
-                    push!(iters_OBBT, fw_res_zero.traj_data[end][1])
-                end
-
-                if LB_zero >= UB - tol
-                    blmo.lower_bounds[idx] = 1.0
-                    num_fixed_to_one += 1
-                end
-            end
-        end
-    end
-
-    # ==========================================================
-    # 6. Final feasibility check
-    # ==========================================================
-    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL
-
-    return (
-        x_ub,
-        UB,
-        is_feasible,
-        blmo,
-        iters_OBBT,
-        num_checked,
-        num_fixed_to_zero,
-        num_fixed_to_one,
-    )
-end
-
 """
     preprocessing(A, B, n; use_OBBT=false, time_limit=3600)
 
 Returns `(blmo, preprocessing_results)` where `preprocessing_results` is
-`(times, iters, num_checked, num_fixed_to_zero_tuple, num_fixed_to_one)` for
-compatibility with `bench` CSV export (`times` is a 1-tuple of seconds).
+`(times, iters, num_checked, num_fixed_to_zero_tuple, num_fixed_to_one, optimality_certified)`
+for compatibility with `bench` CSV export (`times` is a 1-tuple of seconds).
 """
 function preprocessing(
     A,
@@ -272,12 +108,13 @@ function preprocessing(
     nz_obbt = 0
     no_obbt = 0
     is_feasible = true
+    optimality_certified = false
 
     if use_OBBT
         @info "Activating OBBT preprocess..."
         t_obbt = @elapsed begin
-            _, _, is_feasible, blmo, iters_obbt, num_checked, nz_obbt, no_obbt =
-                OBBT_preprocess(A, B, n, blmo)
+            _, _, is_feasible, blmo, iters_obbt, num_checked, nz_obbt, no_obbt, optimality_certified, _, _ =
+                    OBBT_preprocess(A, B, n, blmo; time_limit = time_limit)
         end
         @info "OBBT preprocess took $(t_obbt) s ($(nz_obbt) to zero, $(no_obbt) to one)"
     end
@@ -285,7 +122,15 @@ function preprocessing(
     num_fixed_to_zero = (nz_obbt,)
     num_fixed_to_one = no_obbt
     times = (t_obbt,)
-    preprocessing_results = (times, iters_obbt, num_checked, num_fixed_to_zero, num_fixed_to_one)
+    preprocessing_results = (
+        times,
+        iters_obbt,
+        num_checked,
+        num_fixed_to_zero,
+        num_fixed_to_one,
+        optimality_certified,
+    )
+
     if is_feasible
         return blmo, preprocessing_results
     else
@@ -370,14 +215,25 @@ function boscia_run(
         time_limit = time_limit,
     )
 
+    preprocessing_time_elapsed = sum(preprocessing_results[1])
+    optimality_certified = preprocessing_results[6]
+
     if blmo == nothing
-        preprocessing_time_elapsed = sum(preprocessing_results[1])
         return "INFEASIBLE", preprocessing_time_elapsed, preprocessing_results, nothing
     end
+
+    if optimality_certified
+        return "OPTIMAL", preprocessing_time_elapsed, preprocessing_results, nothing
+    end
+
+    if isfinite(time_limit) && preprocessing_time_elapsed >= time_limit
+        return "TIME_LIMIT", preprocessing_time_elapsed, preprocessing_results, nothing
+    end
    
-    preprocessing_time_elapsed = sum(preprocessing_results[1])
-    time_left = max(1, Int(round(time_limit - preprocessing_time_elapsed)))
-    settings.branch_and_bound[:time_limit] = time_left
+    if isfinite(time_limit)
+        time_left = max(1, floor(Int, time_limit - preprocessing_time_elapsed))
+        settings.branch_and_bound[:time_limit] = time_left
+    end
     settings.heuristic[:custom_heuristics] = [swap_heu]
     settings.frank_wolfe[:variant] = variant
     settings.frank_wolfe[:line_search] = FrankWolfe.Secant()
@@ -388,7 +244,7 @@ function boscia_run(
 
     x, _, result = Boscia.solve(f, grad!, blmo, settings = settings)
     X = reshape(x, n, n)
-    total_time_in_sec = result[:total_time_in_sec] + sum(preprocessing_results[1])
+    total_time_in_sec = result[:total_time_in_sec] + preprocessing_time_elapsed
     status = result[:status_string]
 
     if occursin("Optimal", status)

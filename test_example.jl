@@ -51,12 +51,12 @@ include("benchmarkProblems.jl")
 # Example: run Boscia DICG on a single instance
 
 bench(
-    3;        # random seed
+    4;        # random seed
     solver      = "boscia_obbt",
     time_limit  = 3600,
     write       = false,
     nauty_graph = "",
     is_GOE_graph = true,
-    num_nodes_GOE = 20,
-    noise_level = "small_perm",
+    num_nodes_GOE = 6,
+    noise_level = "intermediate",
 )

@@ -30,7 +30,7 @@ function bench(
     abs_dual_gap = NaN
     primal_obj = NaN
     dual_bound = NaN
-    fixing_res = ((0.0,), Int[], 0, (0,), 0)
+    fixing_res = ((0.0,), Int[], 0, (0,), 0, false)
     P = nothing  # planted permutation (GOE); used only to compare optimal objective, not the iterate
 
     if is_GOE_graph
@@ -139,7 +139,7 @@ function bench(
         end
 
         if occursin("obbt", solver)
-            times_tuple, iters_vec, num_checked_ws, fixed_zero_tuple, num_fixed_to_one =
+            times_tuple, iters_vec, num_checked_ws, fixed_zero_tuple, num_fixed_to_one, _ =
                 fixing_res
             fixing_time_val = sum(times_tuple)
 
