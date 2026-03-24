@@ -30,7 +30,7 @@ function bench(
     abs_dual_gap = NaN
     primal_obj = NaN
     dual_bound = NaN
-    fixing_res = nothing
+    fixing_res = ((0.0,), Int[], 0, (0,), 0)
     P = nothing  # planted permutation (GOE); used only to compare optimal objective, not the iterate
 
     if is_GOE_graph
@@ -73,7 +73,7 @@ function bench(
 
         solver_parts = split(solver, "_")
 
-        use_reduced_cost = "rdc" in solver_parts
+        use_OBBT = "obbt" in solver_parts
 
         favor_right = nothing
         if "DFS" in solver_parts
@@ -91,7 +91,7 @@ function bench(
             time_limit = time_limit,
             use_depth = use_depth,
             favor_right = favor_right,
-            use_reduced_cost = use_reduced_cost,
+            use_OBBT = use_OBBT,
         )
         if status == "OPTIMAL"
             issolved = true
@@ -138,7 +138,7 @@ function bench(
             end
         end
 
-        if occursin("rdc", solver)
+        if occursin("obbt", solver)
             times_tuple, iters_vec, num_checked_ws, fixed_zero_tuple, num_fixed_to_one =
                 fixing_res
             fixing_time_val = sum(times_tuple)

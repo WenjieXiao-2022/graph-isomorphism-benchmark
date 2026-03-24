@@ -52,11 +52,11 @@ include("benchmarkProblems.jl")
 
 bench(
     3;        # random seed
-    solver      = "mip_l1",
+    solver      = "boscia_obbt",
     time_limit  = 3600,
     write       = false,
     nauty_graph = "",
     is_GOE_graph = true,
-    num_nodes_GOE = 10,
+    num_nodes_GOE = 20,
     noise_level = "small_perm",
 )
