@@ -22,7 +22,6 @@ function bench(
     seed;
     solver = "spectral",
     time_limit = Inf,
-    write = false,
     iso_generate = true,
 )
     Random.seed!(seed)
@@ -38,6 +37,7 @@ function bench(
 
     # Initialize variables that may be used later
     result = nothing
+    fixing_res = nothing
     rel_dual_gap = NaN
     abs_dual_gap = NaN
     primal_obj = NaN
@@ -128,6 +128,8 @@ function bench(
 
         is_graph_matching = "GM" in solver_parts 
 
+        use_exp_formulation = "exp" in solver_parts
+
         iso_generate ? println("Iso problem...") : println("Non-iso problem...")
         status, solving_time, fixing_res, result = boscia_run(
             A1,
@@ -141,6 +143,8 @@ function bench(
             use_OBBT = use_OBBT,
             use_clique = use_clique,
             use_star = use_star,
+            use_exp_formulation = use_exp_formulation,
+
         )
         if status == "OPTIMAL"
             issolved = true
@@ -181,64 +185,6 @@ function bench(
         )
     end
 
-    if write && issolved
-        result_path = "/home/htc/wexiao/project/graph_isomorphism/slurm_script/GI/results/$solver"
-        if !ispath(result_path)
-            mkpath(result_path)
-        end
-
-
-        filename = joinpath(result_path, "$(graph)_$(seed).csv")
-
-        if contains(solver, "boscia")
-            if result !== nothing
-                rel_dual_gap = result[:rel_dual_gap]
-                abs_dual_gap = result[:dual_gap]
-                primal_obj = result[:primal_objective]
-                dual_bound = result[:dual_bound]
-            else
-                rel_dual_gap = NaN
-                abs_dual_gap = NaN
-                primal_obj = NaN
-                dual_bound = NaN
-            end
-        end
-
-        if occursin("fixings", solver) ||
-           occursin("clique", solver) ||
-           occursin("star", solver)
-
-            times_tuple, iters_vec, num_checked_ws, fixed_zero_tuple, num_fixed_to_one =
-                fixing_res
-            # Total warm-start time (fixings + clique + star)
-            fixing_time_val = sum(times_tuple)
-
-            df = DataFrame(
-                graph = [graph],
-                time = [solving_time],
-                fixing_time = [fixing_time_val],
-                # number_of_fixings counts only actual fixings iterations
-                number_of_fixings = [length(iters_vec)],
-                iters_to_fixings = [iters_vec],
-                num_checked = [num_checked_ws],
-                num_fixed_to_zero = [fixed_zero_tuple],
-                num_fixed_to_one = [num_fixed_to_one],
-                rel_dual_gap = [rel_dual_gap],
-                abs_dual_gap = [abs_dual_gap],
-                primal_obj = [primal_obj],
-                dual_bound = [dual_bound],
-            )
-        else
-            df = DataFrame(
-                graph = [graph],
-                time = [solving_time],
-                rel_dual_gap = [rel_dual_gap],
-                abs_dual_gap = [abs_dual_gap],
-                primal_obj = [primal_obj],
-                dual_bound = [dual_bound],
-            )
-        end
-
-        CSV.write(filename, df)
-    end
+    # Return all artifacts needed for the external writer.
+    return issolved, solving_time, result, fixing_res
 end

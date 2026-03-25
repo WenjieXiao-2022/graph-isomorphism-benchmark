@@ -92,7 +92,7 @@ The function searches recursively for either `<name>.mat` or `<name>.dimacs`
 and parses based on the discovered extension.
 """
 function load_graph(name::String)
-    base = "/home/htc/wexiao/project/graph_isomorphism/graph-isomorphism-benchmark/test_instances_dense"
+    base = "/home/htc/wexiao/project/graph_isomorphism/graph-isomorphism-benchmark/test_instances"
     target_mat = name * ".mat"
     target_dimacs = name * ".dimacs"
     filepath = nothing

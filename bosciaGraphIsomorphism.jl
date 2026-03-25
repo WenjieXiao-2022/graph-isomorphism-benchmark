@@ -175,14 +175,7 @@ function OBBT_preprocess(A, B, n, blmo)
     end
 
     is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
-    return (
-        is_feasible,
-        blmo,
-        iters_OBBT,
-        num_checked,
-        num_fixed_to_zero,
-        num_fixed_to_one,
-    )
+    return (is_feasible, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
 end
 
 function clique_preprocess(A, B, n, blmo)
@@ -233,14 +226,7 @@ function clique_preprocess(A, B, n, blmo)
         iters_OBBT = Int[]
         num_checked = 0
         num_fixed_to_one = 0
-        return (
-            false,
-            blmo,
-            iters_OBBT,
-            num_checked,
-            num_fixed_to_zero,
-            num_fixed_to_one,
-        )
+        return (false, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
     end
 
     # Count clique memberships by size for each vertex
@@ -288,14 +274,7 @@ function clique_preprocess(A, B, n, blmo)
     num_checked = length(fixed_zero)  # Number of variables we checked/fixed
     num_fixed_to_one = 0  # Clique method only fixes to zero
 
-    return (
-        is_feasible,
-        blmo,
-        iters_OBBT,
-        num_checked,
-        num_fixed_to_zero,
-        num_fixed_to_one,
-    )
+    return (is_feasible, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
 end
 
 function star_preprocess(A, B, n, blmo)
@@ -338,14 +317,7 @@ function star_preprocess(A, B, n, blmo)
         num_checked = 0
         num_fixed_to_one = 0
         num_fixed_to_zero = 0
-        return (
-            false,
-            blmo,
-            iters_OBBT,
-            num_checked,
-            num_fixed_to_zero,
-            num_fixed_to_one,
-        )
+        return (false, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
     end
 
     fixed_zero = Set{Tuple{Int,Int}}()
@@ -372,14 +344,7 @@ function star_preprocess(A, B, n, blmo)
     num_checked = length(fixed_zero)  # Number of variables we checked/fixed
     num_fixed_to_one = 0  # Star2 method only fixes to zero
 
-    return (
-        is_feasible,
-        blmo,
-        iters_OBBT,
-        num_checked,
-        num_fixed_to_zero,
-        num_fixed_to_one,
-    )
+    return (is_feasible, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
 end
 
 function preprocessing(
@@ -424,11 +389,7 @@ function preprocessing(
                 (t_OBBT, t_clique, t_star),
                 iters_OBBT,
                 num_checked,
-                (
-                    num_fixed_to_zero_OBBT,
-                    num_fixed_to_zero_clique,
-                    num_fixed_to_zero_star,
-                ),
+                (num_fixed_to_zero_OBBT, num_fixed_to_zero_clique, num_fixed_to_zero_star),
                 num_fixed_to_one,
             ),
             nothing
@@ -454,11 +415,7 @@ function preprocessing(
                 (t_OBBT, t_clique, t_star),
                 iters_OBBT,
                 num_checked,
-                (
-                    num_fixed_to_zero_OBBT,
-                    num_fixed_to_zero_clique,
-                    num_fixed_to_zero_star,
-                ),
+                (num_fixed_to_zero_OBBT, num_fixed_to_zero_clique, num_fixed_to_zero_star),
                 num_fixed_to_one,
             ),
             nothing
@@ -487,11 +444,7 @@ function preprocessing(
                 (t_OBBT, t_clique, t_star),
                 iters_OBBT,
                 num_checked,
-                (
-                    num_fixed_to_zero_OBBT,
-                    num_fixed_to_zero_clique,
-                    num_fixed_to_zero_star,
-                ),
+                (num_fixed_to_zero_OBBT, num_fixed_to_zero_clique, num_fixed_to_zero_star),
                 num_fixed_to_one,
             ),
             nothing
@@ -551,11 +504,11 @@ function build_exp_function_gradient(A, B, n, tau)
     # Precompute Matrix Exponentials
     EA = exp(tau * Matrix(1.0A))
     EB = exp(tau * Matrix(1.0B))
-    
+
     # Precompute squares for the gradient: 2(X*EA^2 - 2*EB*X*EA + EB^2*X)
     EA2 = EA^2
     EB2 = EB^2
-    
+
     # Pre-allocate caches
     R = zeros(n, n)
     EBX = zeros(n, n)
@@ -573,19 +526,19 @@ function build_exp_function_gradient(A, B, n, tau)
     function grad_exp!(storage, x)
         X = reshape(x, n, n)
         S = reshape(storage, n, n)
-        
+
         # Cache EB * X for the middle term
         mul!(EBX, EB, X)
-        
+
         # Term 1: 2 * X * EA^2
         mul!(S, X, EA2, 2, 0)
-        
+
         # Term 2: -4 * (EB * X) * EA
         mul!(S, EBX, EA, -4, 1)
-        
+
         # Term 3: 2 * EB^2 * X
         mul!(S, EB2, X, 2, 1)
-        
+
         return nothing
     end
 
@@ -615,6 +568,7 @@ function boscia_run(
     use_OBBT = false,
     use_clique = false,
     use_star = false,
+    use_exp_formulation = false,
 )
     n = size(A, 1)
 
@@ -706,7 +660,11 @@ function boscia_run(
     settings_pre.frank_wolfe[:fw_verbose] = false
     settings_pre.frank_wolfe[:fw_epsilon] = fw_epsilon
 
-    f, grad! = build_function_gradient(A, B, n)
+    if use_exp_formulation
+        f, grad! = build_exp_function_gradient(A, B, n, 0.1)
+    else
+        f, grad! = build_function_gradient(A, B, n)
+    end
 
     _, _, _ = Boscia.solve(f, grad!, blmo_precompile, settings = settings_pre)
 
