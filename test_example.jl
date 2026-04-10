@@ -57,9 +57,9 @@ include("benchmarkProblems.jl")
 # Example: run Boscia DICG on a single instance
 
 bench(
-    "usr_1_29_1",  # graph name
+    "paley_power_121",  # graph name
     3;        # random seed
-    solver      = "boscia_GM",
+    solver      = "boscia_DFS_star_exp",
     time_limit  = 3600,
-    iso_generate = false,
+    iso_generate = true,
 )

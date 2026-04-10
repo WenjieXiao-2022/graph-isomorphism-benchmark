@@ -552,6 +552,66 @@ function build_exp_function_gradient(A, B, n, tau)
     return f_exp, grad_exp!, f_exp_check
 end
 
+function build_truncated_exp_function_gradient(A, B, n, tau, K)
+
+    function truncated_matrix_exp(M, tau, K)
+        n = size(M, 1)
+        T = Matrix{Float64}(I, n, n)
+        Mk = Matrix{Float64}(I, n, n)
+        coeff = 1.0
+        Mf = Matrix(1.0 * M)
+    
+        for k in 1:K
+            Mk = Mk * Mf
+            coeff *= tau / k
+            T .+= coeff .* Mk
+        end
+    
+        return T
+    end
+
+    EA = truncated_matrix_exp(A, tau, K)
+    EB = truncated_matrix_exp(B, tau, K)
+
+    R = zeros(n, n)
+    T1 = zeros(n, n)
+    T2 = zeros(n, n)
+
+    function f_exp_trunc(x)
+        X = reshape(x, n, n)
+        mul!(R, X, EA)
+        mul!(R, EB, X, -1, 1)
+        return sum(abs2, R)
+    end
+
+    function grad_exp_trunc!(storage, x)
+        X = reshape(x, n, n)
+        S = reshape(storage, n, n)
+
+        # R = X*EA - EB*X
+        mul!(R, X, EA)
+        mul!(R, EB, X, -1, 1)
+
+        # T1 = R * EA'
+        mul!(T1, R, EA')
+
+        # T2 = EB' * R
+        mul!(T2, EB', R)
+
+        # grad = 2 * (R*EA' - EB'*R)
+        @. S = 2.0 * (T1 - T2)
+
+        return nothing
+    end
+
+    function f_exp_trunc_check(x)
+        X = reshape(x, n, n)
+        return norm(X * EA - EB * X)^2
+    end
+
+    return f_exp_trunc, grad_exp_trunc!, f_exp_trunc_check
+end
+
 function boscia_run(
     A,
     B;
@@ -661,7 +721,7 @@ function boscia_run(
     settings_pre.frank_wolfe[:fw_epsilon] = fw_epsilon
 
     if use_exp_formulation
-        f, grad! = build_exp_function_gradient(A, B, n, 0.1)
+        f, grad! = build_truncated_exp_function_gradient(A, B, n, 0.1, 4)
     else
         f, grad! = build_function_gradient(A, B, n)
     end
