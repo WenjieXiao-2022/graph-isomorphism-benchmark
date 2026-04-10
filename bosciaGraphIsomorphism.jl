@@ -545,8 +545,6 @@ function preprocessing(
         @info "Walk-signature preprocess took $(t_walk_sig) seconds"
         @info " $(num_fixed_to_zero_walk_sig) are fixed to zero"
 
-        @error "stop here..."
-
         if !iso_generate && !is_graph_matching && !is_feasible
             @info "Not isomorphic (walk-signature preprocess)"
             return "Optimal",
