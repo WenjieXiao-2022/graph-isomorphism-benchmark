@@ -21,7 +21,11 @@ function get_graph_names_paths(root::String)
             if endswith(f, ".mat") || endswith(f, ".dimacs")
                 path = joinpath(root, f)
                 @assert isfile(path)
-                push!(names, replace(f, r"\.mat$" => ""))
+                if endswith(f, ".mat")
+                    push!(names, replace(f, r"\.mat$" => ""))
+                else
+                    push!(names, replace(f, r"\.dimacs$" => ""))
+                end
                 push!(paths, path)
             end
         end
