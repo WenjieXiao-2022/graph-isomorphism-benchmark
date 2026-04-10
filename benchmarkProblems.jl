@@ -118,6 +118,8 @@ function bench(
 
         use_OBBT = "OBBT" in solver_parts
 
+        use_walk_sig = ("walk" in solver_parts) || ("walksig" in solver_parts)
+
         favor_right = nothing
         if "DFS" in solver_parts
             use_depth = true
@@ -143,6 +145,7 @@ function bench(
             use_OBBT = use_OBBT,
             use_clique = use_clique,
             use_star = use_star,
+            use_walk_sig = use_walk_sig,
             use_exp_formulation = use_exp_formulation,
 
         )

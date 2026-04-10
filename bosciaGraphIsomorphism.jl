@@ -347,6 +347,82 @@ function star_preprocess(A, B, n, blmo)
     return (is_feasible, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
 end
 
+function walk_signature_preprocess(A, B, n, blmo; K = 10, use_bigint = true)
+    # Convert to integer matrices for exact arithmetic
+    # For standard unweighted GI, this is the safest route.
+    if use_bigint
+        Aint = Matrix{BigInt}(A)
+        Bint = Matrix{BigInt}(B)
+        onevecA = ones(BigInt, n)
+        onevecB = ones(BigInt, n)
+        sigA = Matrix{BigInt}(undef, n, K)
+        sigB = Matrix{BigInt}(undef, n, K)
+    else
+        # Faster, but less overflow-safe for larger K / larger graphs
+        Aint = Matrix{Int}(A)
+        Bint = Matrix{Int}(B)
+        onevecA = ones(Int, n)
+        onevecB = ones(Int, n)
+        sigA = Matrix{Int}(undef, n, K)
+        sigB = Matrix{Int}(undef, n, K)
+    end
+
+    # Compute signatures:
+    # column k stores A^k * 1  (and similarly for B), for k = 1,...,K
+    vA = copy(onevecA)
+    vB = copy(onevecB)
+
+    for k in 1:K
+        vA = Aint * vA
+        vB = Bint * vB
+        sigA[:, k] = vA
+        sigB[:, k] = vB
+    end
+
+    # Turn each row into a tuple so we can compare signatures exactly
+    signaturesA = [Tuple(sigA[i, :]) for i in 1:n]
+    signaturesB = [Tuple(sigB[i, :]) for i in 1:n]
+
+    # Quick safe non-isomorphism check:
+    # under any isomorphism, the multiset of vertex signatures must match
+    if sort(signaturesA) != sort(signaturesB)
+        @info "Non-isomorphic: walk-signature multisets do not match"
+        iters_OBBT = Int[]
+        num_checked = 0
+        num_fixed_to_one = 0
+        num_fixed_to_zero = 0
+        return (false, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
+    end
+
+    fixed_zero = Set{Tuple{Int,Int}}()
+    num_fixed_to_zero = 0
+    num_checked = 0
+
+    for i in 1:n
+        sig_i = signaturesA[i]
+        for j in 1:n
+            linear_idx = (i - 1) * n + j
+            if blmo.upper_bounds[linear_idx] != 0.0
+                num_checked += 1
+                if sig_i != signaturesB[j]
+                    push!(fixed_zero, (i, j))
+                    blmo.upper_bounds[linear_idx] = 0.0
+                    num_fixed_to_zero += 1
+                end
+            end
+        end
+    end
+
+    @info "$(length(fixed_zero)) variables fixed to zero after walk-signature filtering (K = $K)"
+
+    is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
+
+    iters_OBBT = Int[]
+    num_fixed_to_one = 0
+
+    return (is_feasible, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
+end
+
 function preprocessing(
     A,
     B,
@@ -354,6 +430,7 @@ function preprocessing(
     use_clique = false,
     use_star = false,
     use_OBBT = false,
+    use_walk_sig = false,
     iso_generate = true,
     is_graph_matching = false,
     time_limit = 3600,
@@ -364,13 +441,15 @@ function preprocessing(
     t_OBBT = 0.0
     t_clique = 0.0
     t_star = 0.0
+    t_walk_sig = 0.0
     num_checked = 0
     iters_OBBT = Int[]
     num_fixed_to_zero_OBBT = 0
     num_fixed_to_zero_clique = 0
     num_fixed_to_zero_star = 0
+    num_fixed_to_zero_walk_sig = 0
     num_fixed_to_one = 0
-    preprocessing_time() = t_OBBT + t_clique + t_star
+    preprocessing_time() = t_OBBT + t_clique + t_star + t_walk_sig
 
 
     if use_clique
@@ -452,9 +531,50 @@ function preprocessing(
         time_left = max(1, Int(round(time_limit - t_OBBT)))
     end
 
+    if use_walk_sig
+        @info "Activating walk-signature preprocess..."
+        t_walk_sig = @elapsed begin
+            is_feasible,
+            blmo,
+            _,
+            num_checked_walk,
+            num_fixed_to_zero_walk_sig,
+            _ = walk_signature_preprocess(A, B, n, blmo)
+            num_checked += num_checked_walk
+        end
+        @info "Walk-signature preprocess took $(t_walk_sig) seconds"
+        @info " $(num_fixed_to_zero_walk_sig) are fixed to zero"
+
+        @error "stop here..."
+
+        if !iso_generate && !is_graph_matching && !is_feasible
+            @info "Not isomorphic (walk-signature preprocess)"
+            return "Optimal",
+            preprocessing_time(),
+            (
+                (t_OBBT, t_clique, t_star, t_walk_sig),
+                iters_OBBT,
+                num_checked,
+                (
+                    num_fixed_to_zero_OBBT,
+                    num_fixed_to_zero_clique,
+                    num_fixed_to_zero_star,
+                    num_fixed_to_zero_walk_sig,
+                ),
+                num_fixed_to_one,
+            ),
+            nothing
+        end
+    end
+
     num_fixed_to_zero =
-        (num_fixed_to_zero_clique, num_fixed_to_zero_star, num_fixed_to_zero_OBBT)
-    t = (t_clique, t_star, t_OBBT)
+        (
+            num_fixed_to_zero_clique,
+            num_fixed_to_zero_star,
+            num_fixed_to_zero_OBBT,
+            num_fixed_to_zero_walk_sig,
+        )
+    t = (t_clique, t_star, t_OBBT, t_walk_sig)
 
     preprocessing_results =
         (t, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
@@ -628,6 +748,7 @@ function boscia_run(
     use_OBBT = false,
     use_clique = false,
     use_star = false,
+    use_walk_sig = false,
     use_exp_formulation = false,
 )
     n = size(A, 1)
@@ -692,7 +813,7 @@ function boscia_run(
     else
         variant = Boscia.DecompositionInvariantConditionalGradient()
         lazy = false
-        fw_iter = 500
+        fw_iter = 50
     end
 
     # Precompile
@@ -749,6 +870,7 @@ function boscia_run(
         use_clique = use_clique,
         use_star = use_star,
         use_OBBT = use_OBBT,
+        use_walk_sig = use_walk_sig,
         iso_generate = iso_generate,
         is_graph_matching = is_graph_matching,
         time_limit = time_limit,
