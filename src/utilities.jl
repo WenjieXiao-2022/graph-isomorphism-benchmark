@@ -96,7 +96,7 @@ The function searches recursively for either `<name>.mat` or `<name>.dimacs`
 and parses based on the discovered extension.
 """
 function load_graph(name::String)
-    base = joinpath(@__DIR__, "test_instances")
+    base = joinpath(@__DIR__, "..", "test_instances")
     target_mat = name * ".mat"
     target_dimacs = name * ".dimacs"
     filepath = nothing

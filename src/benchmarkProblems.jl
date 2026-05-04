@@ -1,18 +1,13 @@
 using LinearAlgebra
-using SparseArrays
 using Statistics
 using Random
 using Printf
-using MAT
-using CSV
-using DataFrames
 using Hungarian
-using FrankWolfe
 using NautyGraphs
 
 include("utilities.jl")
 include("spectral.jl")
-include("bosciaGraphIsomorphism.jl")
+include("boscia.jl")
 include("penalty.jl")
 include("dca.jl")
 include("mip.jl")
@@ -42,6 +37,7 @@ function bench(
     abs_dual_gap = NaN
     primal_obj = NaN
     dual_bound = NaN
+    solving_time = NaN
 
     if iso_generate
         A1, P1 = randomPermutation(A)
