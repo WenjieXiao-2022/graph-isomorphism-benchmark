@@ -116,6 +116,9 @@ function bench(
 
         use_walk_sig = ("walk" in solver_parts) || ("walksig" in solver_parts)
 
+        use_classical_exp_walk =
+            ("classexp" in solver_parts) || ("expwalk" in solver_parts)
+
         use_quantum = ("quantum" in solver_parts) || ("qwalk" in solver_parts)
 
         use_k_particle_quantum =
@@ -149,6 +152,7 @@ function bench(
             use_clique = use_clique,
             use_star = use_star,
             use_walk_sig = use_walk_sig,
+            use_classical_exp_walk = use_classical_exp_walk,
             use_quantum = use_quantum,
             use_k_particle_quantum = use_k_particle_quantum,
             use_exp_formulation = use_exp_formulation,

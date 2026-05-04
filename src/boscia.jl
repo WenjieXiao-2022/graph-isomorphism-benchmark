@@ -75,6 +75,7 @@ function boscia_run(
     use_clique = false,
     use_star = false,
     use_walk_sig = false,
+    use_classical_exp_walk = false,
     use_quantum = false,
     use_k_particle_quantum = false,
     k_particle_k = 2,
@@ -202,6 +203,7 @@ function boscia_run(
         use_star = use_star,
         use_OBBT = use_OBBT,
         use_walk_sig = use_walk_sig,
+        use_classical_exp_walk = use_classical_exp_walk,
         use_quantum = use_quantum,
         use_k_particle_quantum = use_k_particle_quantum,
         k_particle_k = k_particle_k,
@@ -215,6 +217,7 @@ function boscia_run(
         preprocessing_results.times.star +
         preprocessing_results.times.obbt +
         preprocessing_results.times.walk_sig +
+        preprocessing_results.times.classical_exp +
         preprocessing_results.times.quantum +
         preprocessing_results.times.k_particle
 

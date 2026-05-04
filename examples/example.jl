@@ -62,7 +62,7 @@ using GI_benchmark
 GI_benchmark.bench(
     "cfi-20",  # graph name
     3;        # random seed
-    solver      = "boscia_DFS_kpwalk",
+    solver      = "boscia_DFS_expwalk",
     time_limit  = 3600,
     iso_generate = true,
 )

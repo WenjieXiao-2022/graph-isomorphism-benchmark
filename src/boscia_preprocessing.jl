@@ -310,6 +310,58 @@ function walk_signature_preprocess(A, B, n, blmo; K = 10, use_bigint = true)
     return (is_feasible, blmo, num_checked, num_fixed_to_zero)
 end
 
+function classical_exp_walk_preprocess(A, B, n, blmo; K = 6)
+    Ai = BigInt.(Matrix{Int}(A))
+    Bi = BigInt.(Matrix{Int}(B))
+
+    ones_vec = ones(BigInt, n)
+
+    function exact_walk_signatures(M, n, K)
+        sigs = [BigInt[] for _ = 1:n]
+        v = ones_vec
+
+        for r = 1:K
+            v = M * v
+            for i = 1:n
+                push!(sigs[i], v[i])
+            end
+        end
+
+        return sigs
+    end
+
+    sig_a = exact_walk_signatures(Ai, n, K)
+    sig_b = exact_walk_signatures(Bi, n, K)
+
+    if sort(sig_a) != sort(sig_b)
+        @info "Non-isomorphic: exact BigInt walk signatures don't match"
+        num_fixed_to_zero = 0
+        return (false, blmo, num_fixed_to_zero)
+    end
+
+    fixed_zero = Set{Tuple{Int,Int}}()
+    num_fixed_to_zero = 0
+
+    for i = 1:n
+        for j = 1:n
+            linear_idx = (i - 1) * n + j
+
+            if blmo.upper_bounds[linear_idx] != 0.0
+                if sig_a[i] != sig_b[j]
+                    push!(fixed_zero, (i, j))
+                    blmo.upper_bounds[linear_idx] = 0.0
+                    num_fixed_to_zero += 1
+                end
+            end
+        end
+    end
+
+    @info "$(length(fixed_zero)) fixed after exact BigInt exp-walk / walk-count preprocessing"
+
+    is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
+    return (is_feasible, blmo, num_fixed_to_zero)
+end
+
 function quantum_walk_preprocess(A, B, n, blmo;
     times = [0.25, 0.5, 1.0, 2.0, 3.0, 4.0],
     digits = 10,
@@ -561,6 +613,7 @@ function preprocessing(
     use_star = false,
     use_OBBT = false,
     use_walk_sig = false,
+    use_classical_exp_walk = false,
     use_quantum = false,
     use_k_particle_quantum = false,
     k_particle_k = 2,
@@ -575,6 +628,7 @@ function preprocessing(
         star = 0.0,
         obbt = 0.0,
         walk_sig = 0.0,
+        classical_exp = 0.0,
         quantum = 0.0,
         k_particle = 0.0,
     )
@@ -585,6 +639,7 @@ function preprocessing(
         star = 0,
         obbt = 0,
         walk_sig = 0,
+        classical_exp = 0,
         quantum = 0,
         k_particle = 0,
     )
@@ -601,6 +656,7 @@ function preprocessing(
                 star = fixed_to_zero.star,
                 obbt = fixed_to_zero.obbt,
                 walk_sig = fixed_to_zero.walk_sig,
+                classical_exp = fixed_to_zero.classical_exp,
                 quantum = fixed_to_zero.quantum,
                 k_particle = fixed_to_zero.k_particle,
             )
@@ -619,6 +675,7 @@ function preprocessing(
             star = times.star,
             obbt = times.obbt,
             walk_sig = times.walk_sig,
+            classical_exp = times.classical_exp,
             quantum = times.quantum,
             k_particle = times.k_particle,
         )
@@ -634,6 +691,7 @@ function preprocessing(
                 star = nfix0,
                 obbt = fixed_to_zero.obbt,
                 walk_sig = fixed_to_zero.walk_sig,
+                classical_exp = fixed_to_zero.classical_exp,
                 quantum = fixed_to_zero.quantum,
                 k_particle = fixed_to_zero.k_particle,
             )
@@ -652,6 +710,7 @@ function preprocessing(
             star = t,
             obbt = times.obbt,
             walk_sig = times.walk_sig,
+            classical_exp = times.classical_exp,
             quantum = times.quantum,
             k_particle = times.k_particle,
         )
@@ -670,6 +729,7 @@ function preprocessing(
                 star = fixed_to_zero.star,
                 obbt = nfix0,
                 walk_sig = fixed_to_zero.walk_sig,
+                classical_exp = fixed_to_zero.classical_exp,
                 quantum = fixed_to_zero.quantum,
                 k_particle = fixed_to_zero.k_particle,
             )
@@ -688,6 +748,7 @@ function preprocessing(
             star = times.star,
             obbt = t,
             walk_sig = times.walk_sig,
+            classical_exp = times.classical_exp,
             quantum = times.quantum,
             k_particle = times.k_particle,
         )
@@ -706,6 +767,7 @@ function preprocessing(
                 star = fixed_to_zero.star,
                 obbt = fixed_to_zero.obbt,
                 walk_sig = nfix0,
+                classical_exp = fixed_to_zero.classical_exp,
                 quantum = fixed_to_zero.quantum,
                 k_particle = fixed_to_zero.k_particle,
             )
@@ -724,11 +786,43 @@ function preprocessing(
             star = times.star,
             obbt = times.obbt,
             walk_sig = t,
+            classical_exp = times.classical_exp,
             quantum = times.quantum,
             k_particle = times.k_particle,
         )
         @info "Walk-signature preprocess took $(t) seconds"
         @info " $(fixed_to_zero.walk_sig) are fixed to zero"
+    end
+
+    if use_classical_exp_walk && !early_stop
+        @info "Activating classical exp-walk preprocess..."
+        t = @elapsed begin
+            is_feasible, blmo, nfix0 = classical_exp_walk_preprocess(A, B, n, blmo)
+            fixed_to_zero = (;
+                clique = fixed_to_zero.clique,
+                star = fixed_to_zero.star,
+                obbt = fixed_to_zero.obbt,
+                walk_sig = fixed_to_zero.walk_sig,
+                classical_exp = nfix0,
+                quantum = fixed_to_zero.quantum,
+                k_particle = fixed_to_zero.k_particle,
+            )
+            if !iso_generate && !is_graph_matching && !is_feasible
+                early_stop = true
+                early_reason = :classical_exp
+            end
+        end
+        times = (;
+            clique = times.clique,
+            star = times.star,
+            obbt = times.obbt,
+            walk_sig = times.walk_sig,
+            classical_exp = t,
+            quantum = times.quantum,
+            k_particle = times.k_particle,
+        )
+        @info "Classical exp-walk preprocess took $(t) seconds"
+        @info " $(fixed_to_zero.classical_exp) are fixed to zero"
     end
 
     if use_quantum && !early_stop
@@ -740,6 +834,7 @@ function preprocessing(
                 star = fixed_to_zero.star,
                 obbt = fixed_to_zero.obbt,
                 walk_sig = fixed_to_zero.walk_sig,
+                classical_exp = fixed_to_zero.classical_exp,
                 quantum = nfix0,
                 k_particle = fixed_to_zero.k_particle,
             )
@@ -758,6 +853,7 @@ function preprocessing(
             star = times.star,
             obbt = times.obbt,
             walk_sig = times.walk_sig,
+            classical_exp = times.classical_exp,
             quantum = t,
             k_particle = times.k_particle,
         )
@@ -780,6 +876,7 @@ function preprocessing(
                 star = fixed_to_zero.star,
                 obbt = fixed_to_zero.obbt,
                 walk_sig = fixed_to_zero.walk_sig,
+                classical_exp = fixed_to_zero.classical_exp,
                 quantum = fixed_to_zero.quantum,
                 k_particle = nfix0,
             )
@@ -798,6 +895,7 @@ function preprocessing(
             star = times.star,
             obbt = times.obbt,
             walk_sig = times.walk_sig,
+            classical_exp = times.classical_exp,
             quantum = times.quantum,
             k_particle = t,
         )
