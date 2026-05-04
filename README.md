@@ -1,55 +1,41 @@
-# GraphIsomorphismsWithBoscia
+# Graph Isomorphism Benchmark
 
-Julia package for benchmarking **graph isomorphism (GI)** solvers, with a focus on **Boscia** (branch-and-bound + Frank–Wolfe over the Birkhoff polytope).
+Julia package for benchmarking graph isomorphism (GI) solvers, with a focus on Boscia (branch-and-bound + Frank-Wolfe over the Birkhoff polytope).
 
-The main package entrypoint is `src/GI_benchmark.jl`, which exports `bench(...)`.
+The package entrypoint is `src/GI_benchmark.jl`, which exports `bench`, `load_graph`, `randomPermutation`, and `non_iso_graph`.
 
-## Repository layout
+## Layout
 
-- **`src/GI_benchmark.jl`**: package module entrypoint.
-- **`examples/basic_bench.jl`**: minimal runnable benchmark example.
-- **`test/runtests.jl`**: package smoke tests (used by `Pkg.test()`).
-- **`src/benchmarkProblems.jl`**: `bench(graph, seed; solver=..., format=..., time_limit=..., iso_generate=...)` loads an instance, generates an isomorphic or non-isomorphic pair, runs the chosen solver, and optionally writes a CSV result.
-- **`src/bosciaGraphIsomorphism.jl`**: Boscia-based GI solvers, including optional preprocessing (clqiue, star and OBBT) routines.
-- **`src/spectral.jl`**: spectral + assignment-based isomorphism check (`isIsomorphic`, `isIsomorphicRepeated`) using the Hungarian algorithm.
-- **`src/mip.jl`**: a MIP formulation of GI (SCIP / HiGHS via JuMP).
-- **`src/penalty.jl`**, **`src/dca.jl`**: additional continuous optimization baselines.
-- **`src/utilities.jl`**: graph loading and helper utilities (`load_graph`, `randomPermutation`, `non_iso_graph`, …).
+- `src/GI_benchmark.jl`: module entrypoint.
+- `src/benchmarkProblems.jl`: `bench(...)` orchestration and solver dispatch.
+- `src/boscia.jl`: Boscia run pipeline.
+- `src/boscia_preprocessing.jl`: Boscia preprocessing routines (clique/star/OBBT/walk-signature).
+- `src/boscia_func_grad.jl`: Boscia objective/gradient builder functions.
+- `src/spectral.jl`: spectral + Hungarian baseline.
+- `src/mip.jl`: MIP baseline.
+- `src/dca.jl`: DCA baseline.
+- `src/penalty.jl`: penalty/FW baseline.
+- `src/utilities.jl`: graph loading + utility helpers.
+- `examples/example.jl`: runnable example script.
+- `test/runtests.jl`: package smoke tests.
 
-`test_example.jl` remains as a compatibility script, but `examples/basic_bench.jl` is the preferred location for runnable examples.
-
-## Data / folder layout (expected by `load_graph`)
-
-`src/utilities.jl`’s `load_graph(name; format=...)` expects these folders (relative to the repository root):
-
-- **MAT instances**: `./export_mat/<name>.mat`
-- **DIMACS instances**: searched under `./more_benchmark/`
-- **Cospectral non-iso DIMACS instances**: searched under `./cospectral_benchmark/`
-
-If you use your own dataset layout, update `load_graph` in `src/utilities.jl`.
-
-## Install & run
-
-From this directory, start Julia and install the required packages (the code uses `Boscia`, `FrankWolfe`, `Graphs`, `NautyGraphs`, `Hungarian`, `JuMP`, `SCIP`, `HiGHS`, `MAT`, `CSV`, `DataFrames`, etc.):
+## Setup
 
 ```julia
 import Pkg
 Pkg.activate(".")
-Pkg.add([
-  "Boscia", "Bonobo", "FrankWolfe", "CombinatorialLinearOracles",
-  "Graphs", "NautyGraphs", "Hungarian",
-  "JuMP", "SCIP", "HiGHS",
-  "MAT", "CSV", "DataFrames",
-])
+Pkg.instantiate()
 ```
 
-Run the example:
+## Run
+
+Example:
 
 ```bash
-julia examples/basic_bench.jl
+julia examples/example.jl
 ```
 
-Run tests:
+Tests:
 
 ```julia
 import Pkg
@@ -57,29 +43,29 @@ Pkg.activate(".")
 Pkg.test()
 ```
 
-## Solver strings (how `bench` interprets `solver`)
+## Solver Names
 
-`bench(...; solver="...")` dispatches based on substrings in the solver name:
+`bench(...; solver="...")` dispatches by string pattern:
 
-- **Boscia**: any solver string containing `"boscia"` triggers `boscia_run(...)`.
-  - **Traversal**: `"DFS"` enables depth-first traversal; `"left"` can be used in the name to prefer the left branch in depth-first mode.
-  - **Frank–Wolfe variant**: `"fw"` / `"bpcg"` / `"dicg"` selects the FW variant (DICG is the default in `boscia_run`).
-  - **Preprocessing (warm-start)**: append any of:
-    - `"clique"`: clique-based fixings
-    - `"star"`: star-based fixings
-    - `"OBBT"`: bound-tightening based fixings
-    Example: `solver="boscia_DFS_clique_star_OBBT"`.
-- **Nauty**: `solver="nauty"` uses `NautyGraphs` to test isomorphism.
-- **Spectral**: `solver="spectral"` uses the spectral + Hungarian assignment approach.
-- **MIP**: any solver containing `"mip"` runs the MIP approach in `src/mip.jl`.
-- **DCA**: any solver containing `"dca"` runs the DCA baseline (`src/dca.jl`).
-- **Penalty/FW**: any solver containing `"penalty"` runs the penalty/FW baseline (`src/penalty.jl`).
+- `"boscia"`: Boscia-based solver (`boscia_run`).
+  - Add `"DFS"` (and optionally `"left"`) for DFS traversal behavior.
+  - Add `"fw"` / `"bpcg"` / `"dicg"` for Frank-Wolfe variants.
+  - Add `"clique"`, `"star"`, `"OBBT"`, `"walk"` for preprocessing.
+- `"nauty"`: NautyGraphs baseline.
+- `"spectral"`: spectral + Hungarian baseline.
+- `"mip"`: MIP baseline.
+- `"dca"`: DCA baseline.
+- `"penalty"`: penalty/FW baseline.
 
-## Generating non-isomorphic pairs
+## Data Layout
 
-`bench(...; iso_generate=false)` creates a non-isomorphic instance by **flipping edges** (see `non_iso_graph` in `src/utilities.jl`).
-You can encode the number of flips as a trailing suffix in the solver string, e.g. `solver="boscia_DFS_5"` to flip 5 edges.
+`load_graph(name)` in `src/utilities.jl` searches under:
 
-## Output (optional CSV)
+- `./test_instances` recursively for `<name>.mat` or `<name>.dimacs`.
 
-If `write=true`, `bench` writes a one-row CSV under a solver-specific output folder (see the `result_path` in `src/benchmarkProblems.jl`). If you want portable output, change `result_path` to a local directory.
+If your dataset structure is different, edit `load_graph` accordingly.
+
+## Notes
+
+- For non-isomorphic generation, use `iso_generate=false`.
+- Edge flip count can be encoded as a trailing integer in solver name, e.g. `boscia_DFS_5`.
