@@ -60,8 +60,8 @@ using GI_benchmark
 # Example: run Boscia DICG on a single instance
 
 GI_benchmark.bench(
-    "exact_024",  # graph name
-    3;        # random seed
+    "iso_r01N_m400",  # graph name
+    1;        # random seed
     solver      = "boscia_DFS_qwalk",
     time_limit  = 3600,
     iso_generate = true,

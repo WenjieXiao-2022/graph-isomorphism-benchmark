@@ -358,13 +358,14 @@ function classical_exp_walk_preprocess(A, B, n, blmo; K = 6)
 
     @info "$(length(fixed_zero)) fixed after exact BigInt exp-walk / walk-count preprocessing"
 
-    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL ? true : falsefalse
+    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL ? true : false
     return (is_feasible, blmo, num_fixed_to_zero)
 end
 
 function quantum_walk_preprocess(A, B, n, blmo;
     times = [0.25, 0.5, 1.0, 2.0, 3.0, 4.0],
-    digits = 10,
+    digits = 14,
+    match_tol = nothing,
 )
     Ad = Matrix{Float64}(A)
     Bd = Matrix{Float64}(B)
@@ -393,8 +394,57 @@ function quantum_walk_preprocess(A, B, n, blmo;
     quantum_sig_a = vertex_quantum_signatures(Ad, n)
     quantum_sig_b = vertex_quantum_signatures(Bd, n)
 
+    # Exact vector equality on rounded Float64 signatures is brittle for matrix
+    # exponentials. Use a tolerance-aware compatibility test instead.
+    tol = isnothing(match_tol) ? max(1e-12, 10.0^(2 - digits)) : match_tol
+
+    function signatures_close(sig1, sig2)
+        length(sig1) == length(sig2) || return false
+        return all(isapprox(sig1[k], sig2[k]; atol = tol, rtol = 0.0) for k in eachindex(sig1))
+    end
+
+    function has_perfect_signature_matching(sigA, sigB)
+        nloc = length(sigA)
+        adj = [Int[] for _ = 1:nloc]
+        for i in 1:nloc
+            for j in 1:nloc
+                if signatures_close(sigA[i], sigB[j])
+                    push!(adj[i], j)
+                end
+            end
+            if isempty(adj[i])
+                return false
+            end
+        end
+
+        match_to_i = fill(0, nloc)
+        seen = fill(false, nloc)
+
+        function augment(i)
+            for j in adj[i]
+                if seen[j]
+                    continue
+                end
+                seen[j] = true
+                if match_to_i[j] == 0 || augment(match_to_i[j])
+                    match_to_i[j] = i
+                    return true
+                end
+            end
+            return false
+        end
+
+        for i in 1:nloc
+            fill!(seen, false)
+            if !augment(i)
+                return false
+            end
+        end
+        return true
+    end
+
     # If the multisets of vertex signatures differ, the graphs are non-isomorphic.
-    if sort(quantum_sig_a) != sort(quantum_sig_b)
+    if !has_perfect_signature_matching(quantum_sig_a, quantum_sig_b)
         @info "Non-isomorphic: quantum-walk signatures don't match"
         num_fixed_to_zero = 0
         return (false, blmo, num_fixed_to_zero)
@@ -408,7 +458,7 @@ function quantum_walk_preprocess(A, B, n, blmo;
             linear_idx = (i - 1) * n + j
 
             if blmo.upper_bounds[linear_idx] != 0.0
-                if quantum_sig_a[i] != quantum_sig_b[j]
+                if !signatures_close(quantum_sig_a[i], quantum_sig_b[j])
                     push!(fixed_zero, (i, j))
                     blmo.upper_bounds[linear_idx] = 0.0
                     num_fixed_to_zero += 1
@@ -419,7 +469,7 @@ function quantum_walk_preprocess(A, B, n, blmo;
 
     @info "$(length(fixed_zero)) fixed after quantum-walk preprocessing"
 
-    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL ? true : falsefalse
+    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL ? true : false
     return (is_feasible, blmo, num_fixed_to_zero)
 end
 
