@@ -112,7 +112,7 @@ function OBBT_preprocess(A, B, n, blmo)
         end
     end
 
-    is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
+    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL ? true : false
     return (is_feasible, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
 end
 
@@ -190,7 +190,7 @@ function clique_preprocess(A, B, n, blmo)
         num_fixed_to_zero += 1
     end
 
-    is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
+    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL ? true : false
     return (is_feasible, blmo, num_fixed_to_zero)
 end
 
@@ -247,7 +247,7 @@ function star_preprocess(A, B, n, blmo)
     end
 
     @info "$(length(fixed_zero)) fixed after star size count"
-    is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
+    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL ? true : false
     return (is_feasible, blmo, num_fixed_to_zero)
 end
 
@@ -306,7 +306,7 @@ function walk_signature_preprocess(A, B, n, blmo; K = 10, use_bigint = true)
     end
 
     @info "$(length(fixed_zero)) variables fixed to zero after walk-signature filtering (K = $K)"
-    is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
+    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL ? true : false
     return (is_feasible, blmo, num_checked, num_fixed_to_zero)
 end
 
@@ -358,7 +358,7 @@ function classical_exp_walk_preprocess(A, B, n, blmo; K = 6)
 
     @info "$(length(fixed_zero)) fixed after exact BigInt exp-walk / walk-count preprocessing"
 
-    is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
+    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL ? true : falsefalse
     return (is_feasible, blmo, num_fixed_to_zero)
 end
 
@@ -419,7 +419,7 @@ function quantum_walk_preprocess(A, B, n, blmo;
 
     @info "$(length(fixed_zero)) fixed after quantum-walk preprocessing"
 
-    is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
+    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL ? true : falsefalse
     return (is_feasible, blmo, num_fixed_to_zero)
 end
 
@@ -577,7 +577,7 @@ function k_particle_quantum_walk_preprocess(A, B, n, blmo;
 
     @info "$(length(fixed_zero)) fixed after $k-particle quantum-walk preprocessing"
 
-    is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
+    is_feasible = Boscia.check_feasibility(blmo) == Boscia.OPTIMAL ? true : false
     return (is_feasible, blmo, num_fixed_to_zero)
 end
 
