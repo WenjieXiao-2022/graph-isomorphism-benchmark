@@ -529,6 +529,30 @@ function k_particle_quantum_walk_preprocess(A, B, n, blmo;
     return (is_feasible, blmo, num_fixed_to_zero)
 end
 
+"""
+If the benchmark assumes isomorphic graphs (`iso_generate`) but preprocessing shows
+non-isomorphism or an infeasible assignment polytope, throw. Otherwise, for non-iso
+benchmarks, return `true` when the caller should set `early_stop`.
+"""
+function _iso_benchmark_conflict_or_early_stop(
+    iso_generate::Bool,
+    is_graph_matching::Bool,
+    is_feasible::Bool,
+    reason::Symbol,
+)::Bool
+    if is_graph_matching || is_feasible
+        return false
+    end
+    if iso_generate
+        error(
+            "Preprocessing conflict: iso_generate=true (isomorphic instance) but preprocessing " *
+            "indicates non-isomorphism or an infeasible assignment set (stage=$(repr(reason))). " *
+            "This should not happen for a correct isomorphic pair; check instance generation and invariants.",
+        )
+    end
+    return true
+end
+
 function preprocessing(
     A,
     B,
@@ -580,7 +604,12 @@ function preprocessing(
                 quantum = fixed_to_zero.quantum,
                 k_particle = fixed_to_zero.k_particle,
             )
-            if !iso_generate && !is_graph_matching && !is_feasible
+            if _iso_benchmark_conflict_or_early_stop(
+                iso_generate,
+                is_graph_matching,
+                is_feasible,
+                :clique,
+            )
                 early_stop = true
                 early_reason = :clique
             end
@@ -608,7 +637,12 @@ function preprocessing(
                 quantum = fixed_to_zero.quantum,
                 k_particle = fixed_to_zero.k_particle,
             )
-            if !iso_generate && !is_graph_matching && !is_feasible
+            if _iso_benchmark_conflict_or_early_stop(
+                iso_generate,
+                is_graph_matching,
+                is_feasible,
+                :star,
+            )
                 early_stop = true
                 early_reason = :star
             end
@@ -639,7 +673,12 @@ function preprocessing(
                 quantum = fixed_to_zero.quantum,
                 k_particle = fixed_to_zero.k_particle,
             )
-            if !iso_generate && !is_graph_matching && !is_feasible
+            if _iso_benchmark_conflict_or_early_stop(
+                iso_generate,
+                is_graph_matching,
+                is_feasible,
+                :obbt,
+            )
                 early_stop = true
                 early_reason = :obbt
             end
@@ -670,7 +709,12 @@ function preprocessing(
                 quantum = fixed_to_zero.quantum,
                 k_particle = fixed_to_zero.k_particle,
             )
-            if !iso_generate && !is_graph_matching && !is_feasible
+            if _iso_benchmark_conflict_or_early_stop(
+                iso_generate,
+                is_graph_matching,
+                is_feasible,
+                :walk_sig,
+            )
                 early_stop = true
                 early_reason = :walk_sig
             end
@@ -699,7 +743,12 @@ function preprocessing(
                 quantum = nfix0,
                 k_particle = fixed_to_zero.k_particle,
             )
-            if !iso_generate && !is_graph_matching && !is_feasible
+            if _iso_benchmark_conflict_or_early_stop(
+                iso_generate,
+                is_graph_matching,
+                is_feasible,
+                :quantum,
+            )
                 early_stop = true
                 early_reason = :quantum
             end
@@ -734,7 +783,12 @@ function preprocessing(
                 quantum = fixed_to_zero.quantum,
                 k_particle = nfix0,
             )
-            if !iso_generate && !is_graph_matching && !is_feasible
+            if _iso_benchmark_conflict_or_early_stop(
+                iso_generate,
+                is_graph_matching,
+                is_feasible,
+                :k_particle,
+            )
                 early_stop = true
                 early_reason = :k_particle
             end
@@ -762,4 +816,375 @@ function preprocessing(
     )
 
     return blmo, preprocessing_results
+end
+function build_function_gradient(A, B, n)
+    R = zeros(n, n)
+
+    B2 = Matrix(1.0B^2)
+    A2 = Matrix(1.0A^2)
+    BX = zeros(n, n)
+    function f_acc2(x)
+        X = reshape(x, n, n)
+        # R = X * A - B * X
+        mul!(R, X, A)
+        mul!(R, B, X, -1, 1)
+        return norm(R)^2
+    end
+
+    function f_acc2_check(x)
+        X = reshape(x, n, n)
+        # R = X * A - B * X
+        mul!(R, X, A)
+        mul!(R, B, X, -1, 1)
+        res = norm(R)^2
+        @assert res ≈ norm(X * A - B * X)^2
+        return res
+    end
+    function grad_acc2!(storage, x)
+        X = reshape(x, n, n)
+        mul!(BX, B, X)
+        S = reshape(storage, n, n)
+        # 2A^2 X
+        mul!(S, X, A2, 2, 0)
+        # -4AXB
+        mul!(S, BX, A, -4, 1)
+        # +2 X B^2
+        mul!(S, B2, X, 2, 1)
+        return nothing
+    end
+    return f_acc2, grad_acc2!, f_acc2_check
+end
+
+function build_exp_function_gradient(A, B, n, tau)
+    # Precompute Matrix Exponentials
+    EA = exp(tau * Matrix(1.0A))
+    EB = exp(tau * Matrix(1.0B))
+
+    # Precompute squares for the gradient: 2(X*EA^2 - 2*EB*X*EA + EB^2*X)
+    EA2 = EA^2
+    EB2 = EB^2
+
+    # Pre-allocate caches
+    R = zeros(n, n)
+    EBX = zeros(n, n)
+
+    # Objective function using Frobenius norm [cite: 45]
+    function f_exp(x)
+        X = reshape(x, n, n)
+        # R = X * EA - EB * X
+        mul!(R, X, EA)
+        mul!(R, EB, X, -1, 1)
+        return norm(R)^2
+    end
+
+    # Gradient computation
+    function grad_exp!(storage, x)
+        X = reshape(x, n, n)
+        S = reshape(storage, n, n)
+
+        # Cache EB * X for the middle term
+        mul!(EBX, EB, X)
+
+        # Term 1: 2 * X * EA^2
+        mul!(S, X, EA2, 2, 0)
+
+        # Term 2: -4 * (EB * X) * EA
+        mul!(S, EBX, EA, -4, 1)
+
+        # Term 3: 2 * EB^2 * X
+        mul!(S, EB2, X, 2, 1)
+
+        return nothing
+    end
+
+    # Optional check function
+    function f_exp_check(x)
+        X = reshape(x, n, n)
+        res = norm(X * EA - EB * X)^2
+        return res
+    end
+
+    return f_exp, grad_exp!, f_exp_check
+end
+
+function build_truncated_exp_function_gradient(A, B, n, tau, K)
+
+    function truncated_matrix_exp(M, tau, K)
+        n = size(M, 1)
+        T = Matrix{Float64}(I, n, n)
+        Mk = Matrix{Float64}(I, n, n)
+        coeff = 1.0
+        Mf = Matrix(1.0 * M)
+    
+        for k in 1:K
+            Mk = Mk * Mf
+            coeff *= tau / k
+            T .+= coeff .* Mk
+        end
+    
+        return T
+    end
+
+    EA = truncated_matrix_exp(A, tau, K)
+    EB = truncated_matrix_exp(B, tau, K)
+
+    R = zeros(n, n)
+    T1 = zeros(n, n)
+    T2 = zeros(n, n)
+
+    function f_exp_trunc(x)
+        X = reshape(x, n, n)
+        mul!(R, X, EA)
+        mul!(R, EB, X, -1, 1)
+        return sum(abs2, R)
+    end
+
+    function grad_exp_trunc!(storage, x)
+        X = reshape(x, n, n)
+        S = reshape(storage, n, n)
+
+        # R = X*EA - EB*X
+        mul!(R, X, EA)
+        mul!(R, EB, X, -1, 1)
+
+        # T1 = R * EA'
+        mul!(T1, R, EA')
+
+        # T2 = EB' * R
+        mul!(T2, EB', R)
+
+        # grad = 2 * (R*EA' - EB'*R)
+        @. S = 2.0 * (T1 - T2)
+
+        return nothing
+    end
+
+    function f_exp_trunc_check(x)
+        X = reshape(x, n, n)
+        return norm(X * EA - EB * X)^2
+    end
+
+    return f_exp_trunc, grad_exp_trunc!, f_exp_trunc_check
+end
+
+function boscia_run(
+    A,
+    B;
+    solver = "boscia_dicg",
+    time_limit = 3600,
+    verbose = true,
+    print_iter = 100,
+    fw_verbose = false,
+    fw_epsilon = 1e-2,
+    use_depth = false,
+    is_graph_matching = false,
+    favor_right = nothing,
+    iso_generate = true,
+    use_OBBT = false,
+    use_clique = false,
+    use_star = false,
+    use_walk_sig = false,
+    use_postrdc = false,
+    use_exp_formulation = false,
+    use_exp_truncated_formulation = false,
+    truncated_order = 4,
+)
+    n = size(A, 1)
+
+    function build_branch_callback()
+        return function (tree, node, vidx::Int)
+            x = Bonobo.get_relaxed_values(tree, node)
+            primal = tree.root.problem.f(x)
+            lower_bound = primal - node.dual_gap
+            optimal_val = 0.0
+            if lower_bound > optimal_val + eps()
+                println("No need to branch here. Node lower bound already positive.")
+            end
+            valid_lower = lower_bound > optimal_val + eps()
+            return valid_lower, valid_lower
+        end
+    end
+
+    function build_tree_callback()
+        return function (
+            tree,
+            node;
+            worse_than_incumbent = false,
+            node_infeasible = false,
+            lb_update = false,
+        )
+            optimal_val = 0.0
+            if isapprox(tree.incumbent, optimal_val, atol = eps())
+                tree.root.problem.solving_stage = Boscia.USER_STOP
+                println("Optimal solution found.")
+            end
+            if Boscia.tree_lb(tree::Bonobo.BnBTree) > optimal_val + eps()
+                tree.root.problem.solving_stage = Boscia.USER_STOP
+                println("Tree lower bound already positive. No solution possible.")
+            end
+        end
+    end
+
+
+    blmo_precompile = CLO.BirkhoffLMO(n, collect(1:(n^2)))
+    k = Int(round(sqrt(n)))
+    swap_heu = Boscia.Heuristic(
+        (tree, blmo, x) -> random_k_neighbor_matrix(tree, blmo, x, k, false),
+        1.0,
+        :swap,
+    )
+
+    if use_depth
+        favor_children = favor_right ? "right" : "left"
+        println("Boscia is using DepthFirstStrategy favoring $(favor_children) children...")
+    end
+
+    # default is set to BPCG with lazification
+    if contains(solver, "bpcg")
+        variant = Boscia.BlendedPairwiseConditionalGradient()
+        lazy = true
+        fw_iter = 1000
+    elseif contains(solver, "fw")
+        variant = Boscia.StandardFrankWolfe()
+        lazy = false
+        fw_iter = 1000
+    else
+        variant = Boscia.DecompositionInvariantConditionalGradient()
+        lazy = false
+        fw_iter = 500
+    end
+
+    # Underscore-separated tokens only: `"postrdc"` is not `"rdc"` (substring
+    # matching would wrongly treat `..._postrdc` as containing `rdc`).
+    solver_parts = split(solver, "_")
+    use_postrdc = use_postrdc || ("postrdc" in solver_parts)
+    if use_postrdc
+        @info "postrdc: post-node reduced-cost propagation is enabled (Boscia post_propagate_bounds; build_post_propagate_bounds in utilities.jl)."
+    end
+
+    # Precompile
+    settings_pre = Boscia.create_default_settings()
+    settings_pre.branch_and_bound[:verbose] = true
+    settings_pre.branch_and_bound[:print_iter] = print_iter
+
+    if !is_graph_matching
+        @info "Activating callback..."
+        settings_pre.branch_and_bound[:bnb_callback] = build_tree_callback()
+        settings_pre.branch_and_bound[:branch_callback] = build_branch_callback()
+    end
+
+    settings_pre.branch_and_bound[:time_limit] = 10
+
+    use_depth ?
+    settings_pre.branch_and_bound[:traverse_strategy] =
+        Boscia.DepthFirstSearch(favor_right) : nothing
+
+    settings_pre.heuristic[:custom_heuristics] = [swap_heu]
+    settings_pre.frank_wolfe[:variant] = variant
+    settings_pre.frank_wolfe[:line_search] = FrankWolfe.Secant()
+    settings_pre.frank_wolfe[:lazy] = lazy
+    settings_pre.frank_wolfe[:max_fw_iter] = fw_iter
+    settings_pre.frank_wolfe[:fw_verbose] = false
+    settings_pre.frank_wolfe[:fw_epsilon] = fw_epsilon
+    
+    if use_exp_formulation
+        tau = choose_tau(A, B)
+        if use_exp_truncated_formulation
+            @info "Using truncated exponential formulation with order K = $truncated_order"
+            f, grad! = build_truncated_exp_function_gradient(A, B, n, tau, truncated_order)
+        else
+            f, grad! = build_exp_function_gradient(A, B, n, tau)
+        end
+    else
+        f, grad! = build_function_gradient(A, B, n)
+    end
+
+    _, _, _ = Boscia.solve(f, grad!, blmo_precompile, settings = settings_pre)
+
+    settings = Boscia.create_default_settings()
+    settings.branch_and_bound[:verbose] = verbose
+    settings.branch_and_bound[:print_iter] = print_iter
+
+    if !is_graph_matching
+        @info "Activating iso callback..."
+        settings.branch_and_bound[:bnb_callback] = build_tree_callback()
+        settings.branch_and_bound[:branch_callback] = build_branch_callback()
+    end
+
+    use_depth ?
+    settings.branch_and_bound[:traverse_strategy] = Boscia.DepthFirstSearch(favor_right) :
+    nothing
+
+    blmo, preprocessing_results = preprocessing(
+        A,
+        B,
+        n;
+        use_clique = use_clique,
+        use_star = use_star,
+        use_OBBT = use_OBBT,
+        use_walk_sig = use_walk_sig,
+        iso_generate = iso_generate,
+        is_graph_matching = is_graph_matching,
+        time_limit = time_limit,
+    )
+
+    # Calculate remaining time after preprocessing
+    preprocessing_time_elapsed = sum(preprocessing_results[1])
+    time_left = max(1, Int(round(time_limit - preprocessing_time_elapsed)))
+    settings.branch_and_bound[:time_limit] = time_left
+    settings.heuristic[:custom_heuristics] = [swap_heu]
+    settings.frank_wolfe[:variant] = variant
+    settings.frank_wolfe[:line_search] = FrankWolfe.Secant()
+    settings.frank_wolfe[:lazy] = lazy
+    settings.frank_wolfe[:max_fw_iter] = fw_iter
+    settings.frank_wolfe[:fw_verbose] = fw_verbose
+    settings.frank_wolfe[:fw_epsilon] = fw_epsilon
+
+    # Post-node reduced-cost propagation (during B&B, after each node's FW + heuristics).
+    if use_postrdc
+        settings.tightening[:post_propagate_bounds] =
+            build_post_propagate_bounds(grad!; verbose = true)
+    end
+
+    x, _, result = Boscia.solve(f, grad!, blmo, settings = settings)
+
+    X = reshape(x, n, n)
+
+    total_time_in_sec = result[:total_time_in_sec] + sum(preprocessing_results[1])
+
+    status = result[:status_string]
+
+    if occursin("Optimal", status)
+        # Boscia found an optimal solution (isomorphism found)
+        status = "OPTIMAL"
+        if !is_graph_matching
+            @assert A ≈ X' * B * X
+        end
+    elseif occursin("Time", status)
+        # Time limit reached
+        status = "TIME_LIMIT"
+    elseif status == "User defined stop"
+        # Solver stopped early (via callback)
+        if A ≈ X' * B * X
+            # Found a valid isomorphism (stopped early because solution found)
+            if !is_graph_matching
+                @info "Found Isomorphism"
+            end
+            status = "OPTIMAL"
+        elseif !is_graph_matching && !iso_generate
+            # Proved non-isomorphism: dual_bound > 0 means no solution exists
+            # Status is "OPTIMAL" because we optimally determined the answer (no isomorphism exists)
+            @show result[:dual_bound]
+            @assert result[:dual_bound] > 0.0
+            status = "OPTIMAL"
+            @info "Is not isomorphic (certified via dual bound)"
+        elseif iso_generate && !is_graph_matching
+            # iso_generate=true means graphs are isomorphic, so we must find an isomorphism
+            @error "iso_generate=true but A ≈ X' * B * X failed. Status: $status, X: $X"
+        end
+        # Note: If none of the conditions match, status remains "User defined stop"
+        # Downstream code will handle this appropriately
+    end
+
+    return status, total_time_in_sec, preprocessing_results, result
 end

@@ -152,7 +152,6 @@ function bench(
             use_quantum = use_quantum,
             use_k_particle_quantum = use_k_particle_quantum,
             use_exp_formulation = use_exp_formulation,
-
         )
         if status == "OPTIMAL"
             issolved = true
