@@ -118,6 +118,11 @@ function bench(
 
         use_quantum = ("quantum" in solver_parts) || ("qwalk" in solver_parts)
 
+        use_k_particle_quantum =
+            ("kpart" in solver_parts) ||
+            ("kparticle" in solver_parts) ||
+            ("kpwalk" in solver_parts)
+
         favor_right = nothing
         if "DFS" in solver_parts
             use_depth = true
@@ -145,6 +150,7 @@ function bench(
             use_star = use_star,
             use_walk_sig = use_walk_sig,
             use_quantum = use_quantum,
+            use_k_particle_quantum = use_k_particle_quantum,
             use_exp_formulation = use_exp_formulation,
 
         )

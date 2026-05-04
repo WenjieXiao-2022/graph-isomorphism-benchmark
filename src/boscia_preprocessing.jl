@@ -371,6 +371,164 @@ function quantum_walk_preprocess(A, B, n, blmo;
     return (is_feasible, blmo, num_fixed_to_zero)
 end
 
+function k_particle_quantum_walk_preprocess(A, B, n, blmo;
+    k = 2,
+    times = [0.25, 0.5, 1.0, 2.0],
+    digits = 10,
+)
+    Ad = Matrix{Float64}(A)
+    Bd = Matrix{Float64}(B)
+
+    if k < 1
+        error("k must be at least 1")
+    end
+
+    if k > n
+        error("k cannot be larger than n")
+    end
+
+    function combinations_k(n, k)
+        result = Vector{Vector{Int}}()
+        current = Int[]
+
+        function backtrack(start, remaining)
+            if remaining == 0
+                push!(result, copy(current))
+                return
+            end
+
+            for v in start:(n - remaining + 1)
+                push!(current, v)
+                backtrack(v + 1, remaining - 1)
+                pop!(current)
+            end
+        end
+
+        backtrack(1, k)
+        return result
+    end
+
+    states = combinations_k(n, k)
+    num_states = length(states)
+
+    state_index = Dict{Tuple{Vararg{Int}}, Int}()
+
+    for (idx, S) in enumerate(states)
+        state_index[Tuple(S)] = idx
+    end
+
+    states_containing_vertex = [Int[] for _ = 1:n]
+
+    for (idx, S) in enumerate(states)
+        for v in S
+            push!(states_containing_vertex[v], idx)
+        end
+    end
+
+    function build_k_particle_hamiltonian(M)
+        H = zeros(Float64, num_states, num_states)
+
+        for (idx, S) in enumerate(states)
+            Sset = Set(S)
+
+            for pos in 1:k
+                old_v = S[pos]
+
+                for new_v in 1:n
+                    if M[old_v, new_v] != 0.0 && !(new_v in Sset)
+                        T = copy(S)
+                        T[pos] = new_v
+                        sort!(T)
+
+                        jdx = state_index[Tuple(T)]
+                        H[idx, jdx] = M[old_v, new_v]
+                    end
+                end
+            end
+        end
+
+        # Symmetrize to avoid tiny asymmetries from construction/order.
+        return 0.5 .* (H .+ H')
+    end
+
+    function vertex_k_particle_signatures(M)
+        H = build_k_particle_hamiltonian(M)
+        sigs = [Float64[] for _ = 1:n]
+
+        for t in times
+            U = exp(im * t * H)
+            P = abs2.(U)
+
+            for v in 1:n
+                start_states = states_containing_vertex[v]
+
+                # Return amplitude aggregated over all k-particle states containing v.
+                ret = zero(ComplexF64)
+                for s in start_states
+                    ret += U[s, s]
+                end
+
+                push!(sigs[v], round(real(ret); digits = digits))
+                push!(sigs[v], round(imag(ret); digits = digits))
+
+                # Transition probability mass from states containing v
+                # to states containing each vertex w.
+                vertex_masses = Float64[]
+
+                for w in 1:n
+                    target_states = states_containing_vertex[w]
+
+                    mass = 0.0
+                    for s in start_states
+                        for r in target_states
+                            mass += P[s, r]
+                        end
+                    end
+
+                    push!(vertex_masses, round(mass; digits = digits))
+                end
+
+                # Sorting makes the signature independent of vertex labels.
+                sort!(vertex_masses)
+                append!(sigs[v], vertex_masses)
+            end
+        end
+
+        return sigs
+    end
+
+    quantum_sig_a = vertex_k_particle_signatures(Ad)
+    quantum_sig_b = vertex_k_particle_signatures(Bd)
+
+    if sort(quantum_sig_a) != sort(quantum_sig_b)
+        @info "Non-isomorphic: k-particle quantum-walk signatures don't match"
+        num_fixed_to_zero = 0
+        return (false, blmo, num_fixed_to_zero)
+    end
+
+    fixed_zero = Set{Tuple{Int,Int}}()
+    num_fixed_to_zero = 0
+
+    for i in 1:n
+        for j in 1:n
+            linear_idx = (i - 1) * n + j
+
+            if blmo.upper_bounds[linear_idx] != 0.0
+                if quantum_sig_a[i] != quantum_sig_b[j]
+                    push!(fixed_zero, (i, j))
+                    blmo.upper_bounds[linear_idx] = 0.0
+                    num_fixed_to_zero += 1
+                end
+            end
+        end
+    end
+
+    @info "$(length(fixed_zero)) fixed after $k-particle quantum-walk preprocessing"
+
+    is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
+    return (is_feasible, blmo, num_fixed_to_zero)
+end
+
 function preprocessing(
     A,
     B,
@@ -380,16 +538,32 @@ function preprocessing(
     use_OBBT = false,
     use_walk_sig = false,
     use_quantum = false,
+    use_k_particle_quantum = false,
+    k_particle_k = 2,
     iso_generate = true,
     is_graph_matching = false,
     time_limit = 3600,
 )
     blmo = CLO.BirkhoffLMO(n, collect(1:(n^2)))
 
-    times = (clique = 0.0, star = 0.0, obbt = 0.0, walk_sig = 0.0, quantum = 0.0)
+    times = (
+        clique = 0.0,
+        star = 0.0,
+        obbt = 0.0,
+        walk_sig = 0.0,
+        quantum = 0.0,
+        k_particle = 0.0,
+    )
     iters_obbt = Int[]
     checked_total = 0
-    fixed_to_zero = (clique = 0, star = 0, obbt = 0, walk_sig = 0, quantum = 0)
+    fixed_to_zero = (
+        clique = 0,
+        star = 0,
+        obbt = 0,
+        walk_sig = 0,
+        quantum = 0,
+        k_particle = 0,
+    )
     fixed_to_one = 0
     early_stop = false
     early_reason = nothing
@@ -404,6 +578,7 @@ function preprocessing(
                 obbt = fixed_to_zero.obbt,
                 walk_sig = fixed_to_zero.walk_sig,
                 quantum = fixed_to_zero.quantum,
+                k_particle = fixed_to_zero.k_particle,
             )
             if !iso_generate && !is_graph_matching && !is_feasible
                 early_stop = true
@@ -416,6 +591,7 @@ function preprocessing(
             obbt = times.obbt,
             walk_sig = times.walk_sig,
             quantum = times.quantum,
+            k_particle = times.k_particle,
         )
         @info "Clique-warm-start took $(t) seconds"
     end
@@ -430,6 +606,7 @@ function preprocessing(
                 obbt = fixed_to_zero.obbt,
                 walk_sig = fixed_to_zero.walk_sig,
                 quantum = fixed_to_zero.quantum,
+                k_particle = fixed_to_zero.k_particle,
             )
             if !iso_generate && !is_graph_matching && !is_feasible
                 early_stop = true
@@ -442,6 +619,7 @@ function preprocessing(
             obbt = times.obbt,
             walk_sig = times.walk_sig,
             quantum = times.quantum,
+            k_particle = times.k_particle,
         )
         @info "Star-warm-start took $(t) seconds"
         @info "$(fixed_to_zero.star) are fixed to zero"
@@ -459,6 +637,7 @@ function preprocessing(
                 obbt = nfix0,
                 walk_sig = fixed_to_zero.walk_sig,
                 quantum = fixed_to_zero.quantum,
+                k_particle = fixed_to_zero.k_particle,
             )
             if !iso_generate && !is_graph_matching && !is_feasible
                 early_stop = true
@@ -471,6 +650,7 @@ function preprocessing(
             obbt = t,
             walk_sig = times.walk_sig,
             quantum = times.quantum,
+            k_particle = times.k_particle,
         )
         @info "OBBT-warm-start took $(t) seconds;"
         @info " $(fixed_to_zero.obbt) are fixed to zero;"
@@ -488,6 +668,7 @@ function preprocessing(
                 obbt = fixed_to_zero.obbt,
                 walk_sig = nfix0,
                 quantum = fixed_to_zero.quantum,
+                k_particle = fixed_to_zero.k_particle,
             )
             if !iso_generate && !is_graph_matching && !is_feasible
                 early_stop = true
@@ -500,6 +681,7 @@ function preprocessing(
             obbt = times.obbt,
             walk_sig = t,
             quantum = times.quantum,
+            k_particle = times.k_particle,
         )
         @info "Walk-signature preprocess took $(t) seconds"
         @info " $(fixed_to_zero.walk_sig) are fixed to zero"
@@ -515,6 +697,7 @@ function preprocessing(
                 obbt = fixed_to_zero.obbt,
                 walk_sig = fixed_to_zero.walk_sig,
                 quantum = nfix0,
+                k_particle = fixed_to_zero.k_particle,
             )
             if !iso_generate && !is_graph_matching && !is_feasible
                 early_stop = true
@@ -527,9 +710,45 @@ function preprocessing(
             obbt = times.obbt,
             walk_sig = times.walk_sig,
             quantum = t,
+            k_particle = times.k_particle,
         )
         @info "Quantum-walk preprocess took $(t) seconds"
         @info " $(fixed_to_zero.quantum) are fixed to zero"
+    end
+
+    if use_k_particle_quantum && !early_stop
+        @info "Activating k-particle quantum-walk preprocess (k = $(k_particle_k))..."
+        t = @elapsed begin
+            is_feasible, blmo, nfix0 = k_particle_quantum_walk_preprocess(
+                A,
+                B,
+                n,
+                blmo;
+                k = k_particle_k,
+            )
+            fixed_to_zero = (;
+                clique = fixed_to_zero.clique,
+                star = fixed_to_zero.star,
+                obbt = fixed_to_zero.obbt,
+                walk_sig = fixed_to_zero.walk_sig,
+                quantum = fixed_to_zero.quantum,
+                k_particle = nfix0,
+            )
+            if !iso_generate && !is_graph_matching && !is_feasible
+                early_stop = true
+                early_reason = :k_particle
+            end
+        end
+        times = (;
+            clique = times.clique,
+            star = times.star,
+            obbt = times.obbt,
+            walk_sig = times.walk_sig,
+            quantum = times.quantum,
+            k_particle = t,
+        )
+        @info "k-particle quantum-walk preprocess took $(t) seconds"
+        @info " $(fixed_to_zero.k_particle) are fixed to zero"
     end
 
     preprocessing_results = (

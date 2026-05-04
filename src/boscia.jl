@@ -76,6 +76,8 @@ function boscia_run(
     use_star = false,
     use_walk_sig = false,
     use_quantum = false,
+    use_k_particle_quantum = false,
+    k_particle_k = 2,
     use_exp_formulation = false,
 )
     n = size(A, 1)
@@ -201,6 +203,8 @@ function boscia_run(
         use_OBBT = use_OBBT,
         use_walk_sig = use_walk_sig,
         use_quantum = use_quantum,
+        use_k_particle_quantum = use_k_particle_quantum,
+        k_particle_k = k_particle_k,
         iso_generate = iso_generate,
         is_graph_matching = is_graph_matching,
         time_limit = time_limit,
@@ -211,7 +215,8 @@ function boscia_run(
         preprocessing_results.times.star +
         preprocessing_results.times.obbt +
         preprocessing_results.times.walk_sig +
-        preprocessing_results.times.quantum
+        preprocessing_results.times.quantum +
+        preprocessing_results.times.k_particle
 
     if preprocessing_results.early_stop && !iso_generate && !is_graph_matching
         @info "Not isomorphic ($(preprocessing_results.early_reason) preprocessing)"
