@@ -75,6 +75,7 @@ function boscia_run(
     use_clique = false,
     use_star = false,
     use_walk_sig = false,
+    use_quantum = false,
     use_exp_formulation = false,
 )
     n = size(A, 1)
@@ -199,13 +200,24 @@ function boscia_run(
         use_star = use_star,
         use_OBBT = use_OBBT,
         use_walk_sig = use_walk_sig,
+        use_quantum = use_quantum,
         iso_generate = iso_generate,
         is_graph_matching = is_graph_matching,
         time_limit = time_limit,
     )
 
-    # Calculate remaining time after preprocessing
-    preprocessing_time_elapsed = sum(preprocessing_results[1])
+    preprocessing_time_elapsed =
+        preprocessing_results.times.clique +
+        preprocessing_results.times.star +
+        preprocessing_results.times.obbt +
+        preprocessing_results.times.walk_sig +
+        preprocessing_results.times.quantum
+
+    if preprocessing_results.early_stop && !iso_generate && !is_graph_matching
+        @info "Not isomorphic ($(preprocessing_results.early_reason) preprocessing)"
+        return "OPTIMAL", preprocessing_time_elapsed, preprocessing_results, nothing
+    end
+
     time_left = max(1, Int(round(time_limit - preprocessing_time_elapsed)))
     settings.branch_and_bound[:time_limit] = time_left
     settings.heuristic[:custom_heuristics] = [swap_heu]
@@ -220,7 +232,7 @@ function boscia_run(
 
     X = reshape(x, n, n)
 
-    total_time_in_sec = result[:total_time_in_sec] + sum(preprocessing_results[1])
+    total_time_in_sec = result[:total_time_in_sec] + preprocessing_time_elapsed
 
     status = result[:status_string]
 

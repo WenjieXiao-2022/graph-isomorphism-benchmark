@@ -153,10 +153,7 @@ function clique_preprocess(A, B, n, blmo)
 
     if sort(length.(mclique_a)) != sort(length.(mclique_b))
         @info "Non-isomorphic: maximum clique sizes don't match"
-        iters_OBBT = Int[]
-        num_checked = 0
-        num_fixed_to_one = 0
-        return (false, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
+        return (false, blmo, num_fixed_to_zero)
     end
 
     clique_size_count_a = [Dict{Int,Int}() for _ = 1:nv(gA)]
@@ -194,11 +191,7 @@ function clique_preprocess(A, B, n, blmo)
     end
 
     is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
-    iters_OBBT = Int[]
-    num_checked = length(fixed_zero)
-    num_fixed_to_one = 0
-
-    return (is_feasible, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
+    return (is_feasible, blmo, num_fixed_to_zero)
 end
 
 function star_preprocess(A, B, n, blmo)
@@ -234,11 +227,8 @@ function star_preprocess(A, B, n, blmo)
 
     if sort(length.(star_size_count_a)) != sort(length.(star_size_count_b))
         @info "Non-isomorphic: star size counts don't match"
-        iters_OBBT = Int[]
-        num_checked = 0
-        num_fixed_to_one = 0
         num_fixed_to_zero = 0
-        return (false, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
+        return (false, blmo, num_fixed_to_zero)
     end
 
     fixed_zero = Set{Tuple{Int,Int}}()
@@ -258,11 +248,7 @@ function star_preprocess(A, B, n, blmo)
 
     @info "$(length(fixed_zero)) fixed after star size count"
     is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
-    iters_OBBT = Int[]
-    num_checked = length(fixed_zero)
-    num_fixed_to_one = 0
-
-    return (is_feasible, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
+    return (is_feasible, blmo, num_fixed_to_zero)
 end
 
 function walk_signature_preprocess(A, B, n, blmo; K = 10, use_bigint = true)
@@ -296,11 +282,9 @@ function walk_signature_preprocess(A, B, n, blmo; K = 10, use_bigint = true)
 
     if sort(signaturesA) != sort(signaturesB)
         @info "Non-isomorphic: walk-signature multisets do not match"
-        iters_OBBT = Int[]
         num_checked = 0
-        num_fixed_to_one = 0
         num_fixed_to_zero = 0
-        return (false, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
+        return (false, blmo, num_checked, num_fixed_to_zero)
     end
 
     fixed_zero = Set{Tuple{Int,Int}}()
@@ -323,9 +307,68 @@ function walk_signature_preprocess(A, B, n, blmo; K = 10, use_bigint = true)
 
     @info "$(length(fixed_zero)) variables fixed to zero after walk-signature filtering (K = $K)"
     is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
-    iters_OBBT = Int[]
-    num_fixed_to_one = 0
-    return (is_feasible, blmo, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
+    return (is_feasible, blmo, num_checked, num_fixed_to_zero)
+end
+
+function quantum_walk_preprocess(A, B, n, blmo;
+    times = [0.25, 0.5, 1.0, 2.0, 3.0, 4.0],
+    digits = 10,
+)
+    Ad = Matrix{Float64}(A)
+    Bd = Matrix{Float64}(B)
+
+    function vertex_quantum_signatures(M, n)
+        sigs = [Float64[] for _ = 1:n]
+
+        for t in times
+            U = exp(im * t * M)
+
+            for i = 1:n
+                # Return amplitude
+                push!(sigs[i], round(real(U[i, i]); digits = digits))
+                push!(sigs[i], round(imag(U[i, i]); digits = digits))
+
+                # Transition probabilities from i to all vertices.
+                # Sorting makes this invariant under relabeling.
+                probs = sort(round.(abs2.(U[i, :]); digits = digits))
+                append!(sigs[i], probs)
+            end
+        end
+
+        return sigs
+    end
+
+    quantum_sig_a = vertex_quantum_signatures(Ad, n)
+    quantum_sig_b = vertex_quantum_signatures(Bd, n)
+
+    # If the multisets of vertex signatures differ, the graphs are non-isomorphic.
+    if sort(quantum_sig_a) != sort(quantum_sig_b)
+        @info "Non-isomorphic: quantum-walk signatures don't match"
+        num_fixed_to_zero = 0
+        return (false, blmo, num_fixed_to_zero)
+    end
+
+    fixed_zero = Set{Tuple{Int,Int}}()
+    num_fixed_to_zero = 0
+
+    for i = 1:n
+        for j = 1:n
+            linear_idx = (i - 1) * n + j
+
+            if blmo.upper_bounds[linear_idx] != 0.0
+                if quantum_sig_a[i] != quantum_sig_b[j]
+                    push!(fixed_zero, (i, j))
+                    blmo.upper_bounds[linear_idx] = 0.0
+                    num_fixed_to_zero += 1
+                end
+            end
+        end
+    end
+
+    @info "$(length(fixed_zero)) fixed after quantum-walk preprocessing"
+
+    is_feasible = Boscia.check_feasibility(blmo) == "Optimal" ? true : false
+    return (is_feasible, blmo, num_fixed_to_zero)
 end
 
 function preprocessing(
@@ -336,144 +379,168 @@ function preprocessing(
     use_star = false,
     use_OBBT = false,
     use_walk_sig = false,
+    use_quantum = false,
     iso_generate = true,
     is_graph_matching = false,
     time_limit = 3600,
 )
     blmo = CLO.BirkhoffLMO(n, collect(1:(n^2)))
-    t_OBBT = 0.0
-    t_clique = 0.0
-    t_star = 0.0
-    t_walk_sig = 0.0
-    num_checked = 0
-    iters_OBBT = Int[]
-    num_fixed_to_zero_OBBT = 0
-    num_fixed_to_zero_clique = 0
-    num_fixed_to_zero_star = 0
-    num_fixed_to_zero_walk_sig = 0
-    num_fixed_to_one = 0
-    preprocessing_time() = t_OBBT + t_clique + t_star + t_walk_sig
+
+    times = (clique = 0.0, star = 0.0, obbt = 0.0, walk_sig = 0.0, quantum = 0.0)
+    iters_obbt = Int[]
+    checked_total = 0
+    fixed_to_zero = (clique = 0, star = 0, obbt = 0, walk_sig = 0, quantum = 0)
+    fixed_to_one = 0
+    early_stop = false
+    early_reason = nothing
 
     if use_clique
         @info "Activating clique-warm-start..."
-        t_clique = @elapsed begin
-            is_feasible, blmo, _, _, num_fixed_to_zero_clique, _ =
-                clique_preprocess(A, B, n, blmo)
+        t = @elapsed begin
+            is_feasible, blmo, nfix0 = clique_preprocess(A, B, n, blmo)
+            fixed_to_zero = (;
+                clique = nfix0,
+                star = fixed_to_zero.star,
+                obbt = fixed_to_zero.obbt,
+                walk_sig = fixed_to_zero.walk_sig,
+                quantum = fixed_to_zero.quantum,
+            )
+            if !iso_generate && !is_graph_matching && !is_feasible
+                early_stop = true
+                early_reason = :clique
+            end
         end
-        @info "Clique-warm-start took $(t_clique) seconds"
-
-        if !iso_generate && !is_graph_matching && !is_feasible
-            @info "Not isomorphic (clique warm-start)"
-            return "Optimal",
-            preprocessing_time(),
-            (
-                (t_OBBT, t_clique, t_star),
-                iters_OBBT,
-                num_checked,
-                (num_fixed_to_zero_OBBT, num_fixed_to_zero_clique, num_fixed_to_zero_star),
-                num_fixed_to_one,
-            ),
-            nothing
-        end
-    end
-
-    if use_star
-        @info "Activating star-warm-start..."
-        t_star = @elapsed begin
-            is_feasible, blmo, _, _, num_fixed_to_zero_star, _ =
-                star_preprocess(A, B, n, blmo)
-        end
-        @info "Star-warm-start took $(t_star) seconds"
-        @info "$(num_fixed_to_zero_star) are fixed to zero"
-
-        if !iso_generate && !is_graph_matching && !is_feasible
-            @info "Not isomorphic (star warm-start)"
-            return "Optimal",
-            preprocessing_time(),
-            (
-                (t_OBBT, t_clique, t_star),
-                iters_OBBT,
-                num_checked,
-                (num_fixed_to_zero_OBBT, num_fixed_to_zero_clique, num_fixed_to_zero_star),
-                num_fixed_to_one,
-            ),
-            nothing
-        end
-    end
-
-    if use_OBBT
-        @info "Activating OBBT-warm-start..."
-        t_OBBT = @elapsed begin
-            is_feasible,
-            blmo,
-            iters_OBBT,
-            num_checked,
-            num_fixed_to_zero_OBBT,
-            num_fixed_to_one = OBBT_preprocess(A, B, n, blmo)
-        end
-        @info "OBBT-warm-start took $(t_OBBT) seconds;"
-        @info " $(num_fixed_to_zero_OBBT) are fixed to zero;"
-        @info " $(num_fixed_to_one) are fixed to one;"
-
-        if !iso_generate && !is_graph_matching
-            @info "Not isomorphic (OBBT-warm-start)"
-            return "Optimal",
-            preprocessing_time(),
-            (
-                (t_OBBT, t_clique, t_star),
-                iters_OBBT,
-                num_checked,
-                (num_fixed_to_zero_OBBT, num_fixed_to_zero_clique, num_fixed_to_zero_star),
-                num_fixed_to_one,
-            ),
-            nothing
-        end
-    end
-
-    if use_walk_sig
-        @info "Activating walk-signature preprocess..."
-        t_walk_sig = @elapsed begin
-            is_feasible,
-            blmo,
-            _,
-            num_checked_walk,
-            num_fixed_to_zero_walk_sig,
-            _ = walk_signature_preprocess(A, B, n, blmo)
-            num_checked += num_checked_walk
-        end
-        @info "Walk-signature preprocess took $(t_walk_sig) seconds"
-        @info " $(num_fixed_to_zero_walk_sig) are fixed to zero"
-
-        if !iso_generate && !is_graph_matching && !is_feasible
-            @info "Not isomorphic (walk-signature preprocess)"
-            return "Optimal",
-            preprocessing_time(),
-            (
-                (t_OBBT, t_clique, t_star, t_walk_sig),
-                iters_OBBT,
-                num_checked,
-                (
-                    num_fixed_to_zero_OBBT,
-                    num_fixed_to_zero_clique,
-                    num_fixed_to_zero_star,
-                    num_fixed_to_zero_walk_sig,
-                ),
-                num_fixed_to_one,
-            ),
-            nothing
-        end
-    end
-
-    num_fixed_to_zero =
-        (
-            num_fixed_to_zero_clique,
-            num_fixed_to_zero_star,
-            num_fixed_to_zero_OBBT,
-            num_fixed_to_zero_walk_sig,
+        times = (;
+            clique = t,
+            star = times.star,
+            obbt = times.obbt,
+            walk_sig = times.walk_sig,
+            quantum = times.quantum,
         )
-    t = (t_clique, t_star, t_OBBT, t_walk_sig)
-    preprocessing_results =
-        (t, iters_OBBT, num_checked, num_fixed_to_zero, num_fixed_to_one)
+        @info "Clique-warm-start took $(t) seconds"
+    end
+
+    if use_star && !early_stop
+        @info "Activating star-warm-start..."
+        t = @elapsed begin
+            is_feasible, blmo, nfix0 = star_preprocess(A, B, n, blmo)
+            fixed_to_zero = (;
+                clique = fixed_to_zero.clique,
+                star = nfix0,
+                obbt = fixed_to_zero.obbt,
+                walk_sig = fixed_to_zero.walk_sig,
+                quantum = fixed_to_zero.quantum,
+            )
+            if !iso_generate && !is_graph_matching && !is_feasible
+                early_stop = true
+                early_reason = :star
+            end
+        end
+        times = (;
+            clique = times.clique,
+            star = t,
+            obbt = times.obbt,
+            walk_sig = times.walk_sig,
+            quantum = times.quantum,
+        )
+        @info "Star-warm-start took $(t) seconds"
+        @info "$(fixed_to_zero.star) are fixed to zero"
+    end
+
+    if use_OBBT && !early_stop
+        @info "Activating OBBT-warm-start..."
+        t = @elapsed begin
+            is_feasible, blmo, iters_obbt, nchecked, nfix0, fixed_to_one =
+                OBBT_preprocess(A, B, n, blmo)
+            checked_total = nchecked
+            fixed_to_zero = (;
+                clique = fixed_to_zero.clique,
+                star = fixed_to_zero.star,
+                obbt = nfix0,
+                walk_sig = fixed_to_zero.walk_sig,
+                quantum = fixed_to_zero.quantum,
+            )
+            if !iso_generate && !is_graph_matching && !is_feasible
+                early_stop = true
+                early_reason = :obbt
+            end
+        end
+        times = (;
+            clique = times.clique,
+            star = times.star,
+            obbt = t,
+            walk_sig = times.walk_sig,
+            quantum = times.quantum,
+        )
+        @info "OBBT-warm-start took $(t) seconds;"
+        @info " $(fixed_to_zero.obbt) are fixed to zero;"
+        @info " $(fixed_to_one) are fixed to one;"
+    end
+
+    if use_walk_sig && !early_stop
+        @info "Activating walk-signature preprocess..."
+        t = @elapsed begin
+            is_feasible, blmo, nchecked, nfix0 = walk_signature_preprocess(A, B, n, blmo)
+            checked_total += nchecked
+            fixed_to_zero = (;
+                clique = fixed_to_zero.clique,
+                star = fixed_to_zero.star,
+                obbt = fixed_to_zero.obbt,
+                walk_sig = nfix0,
+                quantum = fixed_to_zero.quantum,
+            )
+            if !iso_generate && !is_graph_matching && !is_feasible
+                early_stop = true
+                early_reason = :walk_sig
+            end
+        end
+        times = (;
+            clique = times.clique,
+            star = times.star,
+            obbt = times.obbt,
+            walk_sig = t,
+            quantum = times.quantum,
+        )
+        @info "Walk-signature preprocess took $(t) seconds"
+        @info " $(fixed_to_zero.walk_sig) are fixed to zero"
+    end
+
+    if use_quantum && !early_stop
+        @info "Activating quantum-walk preprocess..."
+        t = @elapsed begin
+            is_feasible, blmo, nfix0 = quantum_walk_preprocess(A, B, n, blmo)
+            fixed_to_zero = (;
+                clique = fixed_to_zero.clique,
+                star = fixed_to_zero.star,
+                obbt = fixed_to_zero.obbt,
+                walk_sig = fixed_to_zero.walk_sig,
+                quantum = nfix0,
+            )
+            if !iso_generate && !is_graph_matching && !is_feasible
+                early_stop = true
+                early_reason = :quantum
+            end
+        end
+        times = (;
+            clique = times.clique,
+            star = times.star,
+            obbt = times.obbt,
+            walk_sig = times.walk_sig,
+            quantum = t,
+        )
+        @info "Quantum-walk preprocess took $(t) seconds"
+        @info " $(fixed_to_zero.quantum) are fixed to zero"
+    end
+
+    preprocessing_results = (
+        times = times,
+        iters_obbt = iters_obbt,
+        checked_total = checked_total,
+        fixed_to_zero = fixed_to_zero,
+        fixed_to_one = fixed_to_one,
+        early_stop = early_stop,
+        early_reason = early_reason,
+    )
 
     return blmo, preprocessing_results
 end

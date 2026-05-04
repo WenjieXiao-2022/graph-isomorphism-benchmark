@@ -60,9 +60,9 @@ using GI_benchmark
 # Example: run Boscia DICG on a single instance
 
 GI_benchmark.bench(
-    "latin_4_16",  # graph name
+    "cfi-20",  # graph name
     3;        # random seed
-    solver      = "boscia_DFS_star",
+    solver      = "boscia_DFS_qwalk",
     time_limit  = 3600,
     iso_generate = true,
 )

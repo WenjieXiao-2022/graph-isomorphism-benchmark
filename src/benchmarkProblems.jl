@@ -116,6 +116,8 @@ function bench(
 
         use_walk_sig = ("walk" in solver_parts) || ("walksig" in solver_parts)
 
+        use_quantum = ("quantum" in solver_parts) || ("qwalk" in solver_parts)
+
         favor_right = nothing
         if "DFS" in solver_parts
             use_depth = true
@@ -142,6 +144,7 @@ function bench(
             use_clique = use_clique,
             use_star = use_star,
             use_walk_sig = use_walk_sig,
+            use_quantum = use_quantum,
             use_exp_formulation = use_exp_formulation,
 
         )
