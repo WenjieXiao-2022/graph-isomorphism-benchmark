@@ -1,6 +1,7 @@
 using Pkg
 Pkg.activate(@__DIR__)
-Pkg.develop(path = joinpath(@__DIR__, "..", "packages", "Boscia-depth-first-traverse.jl"))
+Pkg.develop(path = joinpath(@__DIR__, "packages", "Bonobo.jl"))
+Pkg.develop(path = joinpath(@__DIR__, "packages", "Boscia_depth-first-traverse.jl"))
 include("benchmarkProblems.jl")
 
 
@@ -60,9 +61,9 @@ include("benchmarkProblems.jl")
 # Example: run Boscia DICG on a single instance
 
 bench(
-    "iso_r01N_m200",  # graph name
+    "latin_6_36",  # graph name
     3;        # random seed
-    solver      = "boscia_DFS_walk",
+    solver      = "boscia_DFS",
     time_limit  = 3600,
     iso_generate = true,
 )

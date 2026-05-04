@@ -811,7 +811,7 @@ function boscia_run(
     else
         variant = Boscia.DecompositionInvariantConditionalGradient()
         lazy = false
-        fw_iter = 50
+        fw_iter = 500
     end
 
     # Precompile
@@ -829,7 +829,7 @@ function boscia_run(
 
     use_depth ?
     settings_pre.branch_and_bound[:traverse_strategy] =
-        Boscia.DepthFirstSearch(favor_right) : nothing
+        Boscia.BiasedDepthFirstSearch(favor_right) : nothing
 
     settings_pre.heuristic[:custom_heuristics] = [swap_heu]
     settings_pre.frank_wolfe[:variant] = variant
@@ -840,7 +840,9 @@ function boscia_run(
     settings_pre.frank_wolfe[:fw_epsilon] = fw_epsilon
 
     if use_exp_formulation
-        f, grad! = build_truncated_exp_function_gradient(A, B, n, 0.1, 4)
+        tau = choose_tau(A, B)
+        tau = 0.1
+        f, grad! = build_truncated_exp_function_gradient(A, B, n, tau, 4)
     else
         f, grad! = build_function_gradient(A, B, n)
     end
@@ -858,7 +860,7 @@ function boscia_run(
     end
 
     use_depth ?
-    settings.branch_and_bound[:traverse_strategy] = Boscia.DepthFirstSearch(favor_right) :
+    settings.branch_and_bound[:traverse_strategy] = Boscia.BiasedDepthFirstSearch(favor_right) :
     nothing
 
     blmo, preprocessing_results = preprocessing(

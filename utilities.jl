@@ -195,3 +195,9 @@ function solve_quadprog_fw_package(n, A, B; time_limit = 300)
     )
     return x, active_set
 end
+
+function choose_tau(A, B; c = 1.0)
+    degA = maximum(vec(sum(A, dims = 2)))
+    degB = maximum(vec(sum(B, dims = 2)))
+    return c / max(Float64(degA), Float64(degB), 1.0)
+end
